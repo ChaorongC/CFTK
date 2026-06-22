@@ -5,6 +5,7 @@ Cell-free DNA Toolkit Documentation
    :hidden:
    :caption: Start
 
+   user_guide/model_power_calculator
    installation
    getting_started
 
@@ -25,22 +26,39 @@ Cell-free DNA Toolkit Documentation
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Interactive Tools
-
-   user_guide/model_power_calculator
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
    :caption: Project
 
    development
 
 .. rst-class:: cftk-hero
 
-CFTK is a versatile cfDNA analysis toolkit designed for NGS based cfDNA Bisulfite-sequencing data processing. The workflow was organized for rawdata processing, data quality control, differential methylation analysis, fragmentomics analysis and multimodal machine learning modeling. We also provide a html report for result summarizing.
+CFTK is a versatile cfDNA analysis toolkit designed for cfDNA Bisulfite-sequencing data processing and analysing, aimed to support the biomarker discovery among lagre-scale Liquid Biopsy cohort. 
 
-The current workflow is driven by the ``cftk`` command implemented in ``cftk.py`` and controled by the user-prepared config file ``cftk_init.json``.
+.. raw:: html
+
+   <div style="text-align: center; margin: 20px 0;">
+       <img src="_static/cftk_diagram.svg" alt="Power Analysis Overview" style="width: 700px; max-width: 100%;">
+   </div>
+
+We provide a model power calculator to evaluate whether a proposed biomarker discovery cohort is likely to produce a useful and detectable internally cross-validated classifier. 
+
+.. grid:: 1
+   :gutter: 2
+
+   .. grid-item-card:: Model Power Calculator
+
+      CFTK model power calculator, a tool to support the study design of cfDNA cohort.
+
+      .. raw:: html
+
+         <hr>
+         <a href="https://cftk-model-power.streamlit.app" target="_blank" style="display: inline-block; background-color: #1b1233; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">Try Now</a>
+         <br>
+         <a href="user_guide/model_power_calculator.html" style="color: #555; text-decoration: underline; font-size: 0.9em;">Tutorial &gt;</a>
+
+
+
+We organized the CFTK workflow from rawdata processing to multimodal machine learning modeling and provide a report for results summarizing. The current workflow is driven by the ``cftk`` command implemented in ``cftk.py`` and controled by the user-prepared config file ``cftk_init.json``.
 
 .. image:: _static/cftk_workflow.png
    :alt: CFTK Workflow Overview

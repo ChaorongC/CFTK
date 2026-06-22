@@ -1,34 +1,29 @@
 Model Power Calculator
 ======================
 
-The CFTK model power calculator evaluates whether a proposed liquid-biopsy
-biomarker-discovery cohort is likely to produce a useful and detectable
-internally cross-validated classifier.
+.. grid:: 1
+   :gutter: 2
 
-.. raw:: html
+   .. grid-item-card:: CFTK Model Power Calculator
+      
+      The model power calculator evaluates whether a proposed Liquid Biopsy biomarker discovery cohort is likely to produce a useful and detectable internally cross-validated classifier.
+      
+      .. raw:: html
 
-   <iframe
-      src="https://cftk-model-power.streamlit.app/?embed=true"
-      width="100%"
-      height="1650px"
-      style="border: 0;"
-      loading="lazy"
-      title="CFTK Model Power Calculator">
-   </iframe>
+         <hr>
+         <a href="https://cftk-model-power.streamlit.app/" target="_blank" style="
+            display: inline-block;
+            background-color: #1b1233;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-bottom: 8px;
+         ">Try now</a>
+         <br>
 
-Standalone app:
-`Open the CFTK Model Power Calculator
-<https://cftk-model-power.streamlit.app>`__
 
-Section Navigation
-------------------
-
-.. contents::
-   :local:
-   :depth: 2
-
-The calculator reports three distinct operating characteristics. They answer
-different questions and should not be used interchangeably.
 
 Power Definitions
 -----------------
@@ -104,6 +99,19 @@ All preprocessing, feature ranking, feature selection, scaling, and model
 fitting are repeated inside each training fold. The same complete workflow is
 used for signal studies and null-calibration studies. The public calculator
 uses logistic regression as a fixed model-development pipeline.
+
+
+Section Navigation
+------------------
+
+.. contents::
+   :local:
+   :depth: 2
+
+The calculator reports three distinct operating characteristics. They answer
+different questions and should not be used interchangeably.
+
+
 
 Null Calibration
 ----------------
