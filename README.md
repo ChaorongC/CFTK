@@ -2,7 +2,11 @@
 
 CFTK is a cfDNA multimodal epigenetic analysis toolkit for processing
 cfMethyl-Seq style data and running downstream methylation, fragmentomics,
-visualization, modeling, and report workflows.
+visualization, modeling, and report workflows. 
+For detailed guidance and tutorial, please refer to the [CFTK website](https://chaorongc.github.io/CFTK/index.html)
+
+You can also use the [CFTK model power calculator](https://cftk-model-power.streamlit.app/) before you start to process your cfDNA cohort.
+
 
 The package is under active development. The current command-line entry point is
 implemented in `src/cftk.py` and is driven by a project configuration file named
