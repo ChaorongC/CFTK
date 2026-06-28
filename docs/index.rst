@@ -32,7 +32,7 @@ Cell-free DNA Toolkit Documentation
 
 .. rst-class:: cftk-hero
 
-CFTK is a versatile cfDNA analysis toolkit designed for cfDNA Bisulfite-sequencing data processing and analysing, aimed to support the biomarker discovery among lagre-scale Liquid Biopsy cohort. 
+CFTK is a versatile cfDNA analysis toolkit designed for cfDNA Bisulfite-sequencing data processing and analyzing, aimed to support the biomarker discovery among large-scale Liquid Biopsy cohort. 
 
 .. raw:: html
 
