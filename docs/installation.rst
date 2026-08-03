@@ -1,8 +1,8 @@
 Installation
 ============
 
-CFTK is still under active package development. The current repository is most
-reliable when run directly from a source checkout.
+CFTK can be installed from a source checkout. External bioinformatics tools
+and large reference datasets remain separate from the Python distribution.
 
 Clone The Repository
 --------------------
@@ -29,16 +29,64 @@ core analysis modules use packages such as ``numpy``, ``pandas``, ``scipy``,
 ``scikit-learn``, ``matplotlib``, ``seaborn``, ``pysam``, ``pyBigWig``,
 ``bx-python``, ``statsmodels``, ``xgboost``, and ``finaletoolkit``.
 
-Run From Source
----------------
+Install CFTK
+------------
 
-Until the package metadata and console entry point are finalized, run CFTK from
-the checkout:
+Install the core package from the checkout:
+
+.. code-block:: bash
+
+   python -m pip install .
+
+Include the Streamlit dependency when developing or deploying the calculator:
+
+.. code-block:: bash
+
+   python -m pip install ".[web]"
+
+The installation provides the ``cftk`` console command and the model-power
+Python modules. It does not install repository-root reference data.
+
+Run CFTK
+--------
+
+.. code-block:: bash
+
+   cftk --help
+   cftk --config cftk_init.json init
+
+Direct source execution remains supported:
 
 .. code-block:: bash
 
    python src/cftk.py --help
-   python src/cftk.py --config cftk_init.json init
+
+Model-Power Reference Data
+--------------------------
+
+The calculator algorithms and loaders are installed, but the aggregate CpG
+arrays under ``data/`` are intentionally excluded from wheels and source
+distributions. Supply a repository checkout explicitly:
+
+.. code-block:: python
+
+   from analysis.model_power import load_default_model_power_reference
+
+   reference = load_default_model_power_reference(
+       reference_dir="/path/to/CFTK/data",
+       depths=[10, 30],
+       sd_stats=["mean"],
+       include_index=False,
+   )
+
+Alternatively, configure the directory once for a process:
+
+.. code-block:: bash
+
+   export CFTK_MODEL_POWER_DATA=/path/to/CFTK/data
+
+An explicit ``reference_dir`` takes precedence over the environment variable.
+The GitHub Streamlit app passes its checked-out ``data/`` directory directly.
 
 External Tools
 --------------

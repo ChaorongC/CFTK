@@ -31,7 +31,7 @@ Below is the standard CFTK configuration file used to set the workflow:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json init
+   cftk --config cftk_init.json init
 
 This checks required top-level sections, sample definitions, comparison group
 names, and required reference fields.
@@ -41,7 +41,7 @@ names, and required reference fields.
 
 .. code-block:: bash
 
-   python src/cftk.py --help
+   cftk --help
 
 The major commands are:
 
@@ -65,7 +65,7 @@ After set up all the related paths in ``cftk_init.json``:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json process -s 1 2 3 4
+   cftk --config cftk_init.json process -s 1 2 3 4
 
 The process command creates standard subdirectories under
 ``<output_dir>/results/1_process`` and merges per-sample CpG calls into
@@ -78,11 +78,11 @@ Examples:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json qc -s 1 2 3
-   python src/cftk.py --config cftk_init.json diff
-   python src/cftk.py --config cftk_init.json frag --wps
-   python src/cftk.py --config cftk_init.json mesa --performance --mesa-model --loocv
-   python src/cftk.py --config cftk_init.json report
+   cftk --config cftk_init.json qc -s 1 2 3
+   cftk --config cftk_init.json diff
+   cftk --config cftk_init.json frag --wps
+   cftk --config cftk_init.json mesa --performance --mesa-model --loocv
+   cftk --config cftk_init.json report
 
 
 6. End-To-End Runs
@@ -92,7 +92,7 @@ The ``run-all`` command runs the configured pipeline end to end:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json run-all
+   cftk --config cftk_init.json run-all
 
 Because ``run-all`` continues after some failures, review logs and expected
 artifacts before treating a run as complete.

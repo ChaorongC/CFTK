@@ -12,6 +12,11 @@ The package is under active development. The current command-line entry point is
 implemented in `src/cftk.py` and is driven by a project configuration file named
 `cftk_init.json`.
 
+The model-development power API is included in the Python distribution, but its
+large aggregate reference arrays are not. The repository keeps those arrays in
+`data/` for the Streamlit app and source-checkout workflows. Installed callers
+must provide that directory explicitly or set `CFTK_MODEL_POWER_DATA`.
+
 ## Documentation
 
 The documentation website is built with Sphinx and the PyData Sphinx Theme.
@@ -31,23 +36,29 @@ docs/_build/html/index.html
 
 ## Quick Start
 
+Install the Python package from the checkout:
+
+```bash
+python -m pip install .
+```
+
 Validate the example configuration:
 
 ```bash
-python src/cftk.py --config cftk_init.json init
+cftk --config cftk_init.json init
 ```
 
 Inspect available commands:
 
 ```bash
-python src/cftk.py --help
+cftk --help
 ```
 
 Run a raw processing step after editing `cftk_init.json` for your samples,
 reference files, tools, and output directory:
 
 ```bash
-python src/cftk.py --config cftk_init.json process -s 1 2 3 4
+cftk --config cftk_init.json process -s 1 2 3 4
 ```
 
 Some workflows require external bioinformatics tools and reference files that

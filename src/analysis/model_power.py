@@ -43,13 +43,21 @@ def load_default_model_power_reference(
 
     This function intentionally performs all reference-data I/O explicitly, so
     importing ``analysis.model_power`` does not load large reference files.
+    CFTK distributions contain the loader and simulation code, not the arrays.
     """
-    from analysis.model_power_reference import load_model_power_reference
+    from analysis.model_power_reference import (
+        load_model_power_reference,
+        resolve_model_power_reference_dir,
+    )
 
     global cpg_mean, cpg_std_summary
 
+    resolved_reference_dir = resolve_model_power_reference_dir(
+        reference_dir,
+        repository_dir=_DEFAULT_REFERENCE_DIR,
+    )
     loaded = load_model_power_reference(
-        _DEFAULT_REFERENCE_DIR if reference_dir is None else reference_dir,
+        resolved_reference_dir,
         depths=depths,
         sd_stats=sd_stats,
         include_index=include_index,
@@ -76,7 +84,12 @@ def get_default_model_power_reference(
     """
     global cpg_mean, cpg_std_summary
 
-    if cpg_mean is None or cpg_std_summary is None or depths is not None:
+    if (
+        cpg_mean is None
+        or cpg_std_summary is None
+        or depths is not None
+        or reference_dir is not None
+    ):
         load_default_model_power_reference(
             reference_dir=reference_dir,
             depths=depths,

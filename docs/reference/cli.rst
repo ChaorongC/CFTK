@@ -6,7 +6,7 @@ Global Options
 
 .. code-block:: text
 
-   python src/cftk.py [--config PATH] <command> ...
+   cftk [--config PATH] <command> ...
 
 ``--config PATH``
    Path to ``cftk_init.json``. Defaults to ``./cftk_init.json``.
@@ -19,56 +19,56 @@ Commands
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json init
+      cftk --config cftk_init.json init
 
 ``process``
    Run raw processing steps 1 through 4.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json process -s 1 2 3 4
+      cftk --config cftk_init.json process -s 1 2 3 4
 
 ``qc``
    Run QC steps 1 through 3.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json qc -s 1 2 3
+      cftk --config cftk_init.json qc -s 1 2 3
 
 ``power``
    Run statistical power analysis.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json power -s 100 -e 0.1
+      cftk --config cftk_init.json power -s 100 -e 0.1
 
 ``diff``
    Run PCA, differential testing, and differential visualizations.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json diff --modality cpg
+      cftk --config cftk_init.json diff --modality cpg
 
 ``dmr``
    Run DMR analysis.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json dmr
+      cftk --config cftk_init.json dmr
 
 ``frag``
    Run fragmentomics workflows.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json frag --wps
+      cftk --config cftk_init.json frag --wps
 
 ``mesa``
    Run MESA modality performance, model construction, and LOOCV.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json mesa --performance --mesa-model --loocv
+      cftk --config cftk_init.json mesa --performance --mesa-model --loocv
 
 ``merge``
    Build feature matrices from user-specified files in the config ``merge``
@@ -76,25 +76,25 @@ Commands
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json merge --modality cpg
+      cftk --config cftk_init.json merge --modality cpg
 
 ``vis``
    Regenerate visualizations from existing results.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json vis --mode all
+      cftk --config cftk_init.json vis --mode all
 
 ``report``
    Generate a self-contained HTML report.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json report
+      cftk --config cftk_init.json report
 
 ``run-all``
    Run the configured end-to-end pipeline.
 
    .. code-block:: bash
 
-      python src/cftk.py --config cftk_init.json run-all --parallel 4
+      cftk --config cftk_init.json run-all --parallel 4

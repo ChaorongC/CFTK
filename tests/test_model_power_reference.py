@@ -282,6 +282,54 @@ class ModelPowerReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Depths not available"):
                 load_model_power_reference(out_dir, depths=[20])
 
+    def test_loader_reports_all_missing_files_before_array_loading(self):
+        from analysis.model_power_reference import (
+            convert_pickles_to_array_reference,
+            load_model_power_reference,
+        )
+
+        mean, std = self._fixtures()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mean_path = root / "mean.pkl"
+            std_path = root / "std.pkl"
+            out_dir = root / "arrays"
+            mean.to_pickle(mean_path)
+            std.to_pickle(std_path)
+            convert_pickles_to_array_reference(mean_path, std_path, out_dir)
+
+            missing_mean = out_dir / "cpg_mean.float32.npy"
+            missing_depth = out_dir / "std_by_depth" / "depth_10_mean.float32.npy"
+            missing_mean.unlink()
+            missing_depth.unlink()
+
+            with self.assertRaisesRegex(
+                FileNotFoundError,
+                "reference data is incomplete",
+            ) as raised:
+                load_model_power_reference(
+                    out_dir,
+                    depths=[10],
+                    sd_stats=["mean"],
+                    include_index=False,
+                )
+
+            self.assertIn(str(missing_mean), str(raised.exception))
+            self.assertIn(str(missing_depth), str(raised.exception))
+
+    def test_manifest_rejects_missing_contract_fields(self):
+        from analysis.model_power_reference import load_manifest
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_dir = Path(tmp)
+            (reference_dir / "manifest.json").write_text(
+                json.dumps({"format_version": 1})
+            )
+
+            with self.assertRaisesRegex(ValueError, "missing required fields"):
+                load_manifest(reference_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

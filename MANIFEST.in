@@ -1,0 +1,2 @@
+prune data
+global-exclude *.npy *.npz *.pkl

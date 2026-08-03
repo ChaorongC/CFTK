@@ -18,6 +18,11 @@ Analysis Modules
 
 - ``src/analysis/qc.py``: QC calculations.
 - ``src/analysis/power_analysis.py``: statistical power analysis.
+- ``src/analysis/model_power.py`` and ``src/analysis/model_power_reference.py``:
+  model-development simulation and external aggregate-reference loading.
+- ``src/analysis/model_power_discovery.py`` and
+  ``src/analysis/model_power_operating_characteristics.py``: cross-validated
+  discovery power and null-calibrated operating characteristics.
 - ``src/analysis/differential.py`` and ``src/analysis/pca_analysis.py``:
   feature-level differential analysis and PCA.
 - ``src/analysis/dmr.py``: DMR preparation, metilene execution, and annotation

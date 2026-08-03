@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -196,11 +195,13 @@ def validate_class_counts(
 
 def available_depths_from_manifest(reference_dir: str | Path) -> tuple[int | float, ...]:
     """Read available mean-depth values from the model-power manifest."""
-    manifest_path = Path(reference_dir) / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    labels = manifest.get("depth_labels") or manifest.get("depths")
-    if not labels:
-        raise AppValidationError("No depth values were found in data/manifest.json.")
+    from analysis.model_power_reference import load_manifest
+
+    try:
+        manifest = load_manifest(reference_dir)
+        labels = manifest["depth_labels"]
+    except (OSError, TypeError, ValueError, KeyError) as exc:
+        raise AppValidationError(str(exc)) from exc
     return tuple(_coerce_depth_label(value) for value in labels)
 
 

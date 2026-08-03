@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,16 @@ import pandas as pd
 
 FORMAT_VERSION = 1
 DEFAULT_STATS = ("mean", "CI_l", "CI_u")
+REFERENCE_DATA_ENV = "CFTK_MODEL_POWER_DATA"
+_REQUIRED_MANIFEST_FIELDS = {
+    "depth_labels",
+    "format_version",
+    "index_file",
+    "mean_file",
+    "row_count",
+    "stats",
+    "std_files",
+}
 _STD_COLUMN_RE = re.compile(
     r"^(?P<depth>[0-9]+(?:\.[0-9]+)?)_(?P<stat>mean|CI_l|CI_u)$"
 )
@@ -27,6 +38,40 @@ class ModelPowerReference:
     cpg_mean: pd.Series
     cpg_std_summary: pd.DataFrame
     manifest: dict
+
+
+def resolve_model_power_reference_dir(
+    reference_dir: str | Path | None = None,
+    *,
+    repository_dir: str | Path | None = None,
+) -> Path:
+    """Resolve an external model-power reference directory.
+
+    Resolution order is an explicit argument, ``CFTK_MODEL_POWER_DATA``, then
+    the supplied repository checkout fallback. Reference arrays are not part
+    of the installed CFTK distribution.
+    """
+    if reference_dir is not None:
+        resolved = Path(reference_dir).expanduser()
+    else:
+        configured = os.environ.get(REFERENCE_DATA_ENV, "").strip()
+        if configured:
+            resolved = Path(configured).expanduser()
+        elif repository_dir is not None:
+            resolved = Path(repository_dir).expanduser()
+        else:
+            resolved = Path(__file__).resolve().parents[2] / "data"
+
+    manifest_path = resolved / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Model-power reference data not found at {resolved}. CFTK installs "
+            "the calculator code but does not bundle its reference arrays. "
+            "Pass reference_dir='/path/to/CFTK/data', set "
+            f"{REFERENCE_DATA_ENV}, or run from a repository checkout that "
+            "contains data/manifest.json."
+        )
+    return resolved
 
 
 def _depth_label(value: float | int | str) -> str:
@@ -232,27 +277,64 @@ def load_manifest(reference_dir: str | Path) -> dict:
         raise FileNotFoundError(
             f"Model-power reference manifest not found: {manifest_path}"
         ) from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Model-power reference manifest is not valid JSON: {manifest_path}"
+        ) from exc
+
+    if not isinstance(manifest, dict):
+        raise ValueError(
+            f"Model-power reference manifest must contain a JSON object: "
+            f"{manifest_path}"
+        )
 
     if manifest.get("format_version") != FORMAT_VERSION:
         raise ValueError(
             f"Unsupported model-power reference format_version: "
             f"{manifest.get('format_version')!r}."
         )
+
+    missing_fields = sorted(_REQUIRED_MANIFEST_FIELDS - set(manifest))
+    if missing_fields:
+        raise ValueError(
+            f"Model-power reference manifest is missing required fields: "
+            f"{', '.join(missing_fields)}."
+        )
+
+    try:
+        row_count = int(manifest["row_count"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Model-power manifest row_count must be an integer.") from exc
+    if row_count < 1:
+        raise ValueError("Model-power manifest row_count must be positive.")
+
+    depth_labels = [str(value) for value in manifest["depth_labels"]]
+    if not depth_labels or len(set(depth_labels)) != len(depth_labels):
+        raise ValueError(
+            "Model-power manifest depth_labels must contain unique values."
+        )
+    if not isinstance(manifest["stats"], list) or not manifest["stats"]:
+        raise ValueError("Model-power manifest stats must be a non-empty list.")
+    if not isinstance(manifest["std_files"], dict):
+        raise ValueError("Model-power manifest std_files must be an object.")
+    missing_depth_files = [
+        depth for depth in depth_labels if depth not in manifest["std_files"]
+    ]
+    if missing_depth_files:
+        raise ValueError(
+            "Model-power manifest std_files is missing depths: "
+            + ", ".join(missing_depth_files)
+        )
     return manifest
 
 
-def load_model_power_reference(
-    reference_dir: str | Path,
+def _validate_reference_request(
+    manifest: dict,
     *,
-    depths: Sequence[float | int | str] | None = None,
-    sd_stats: Sequence[str] = DEFAULT_STATS,
-    include_index: bool = True,
-    mmap_mode: str | None = "r",
-) -> ModelPowerReference:
-    """Load selected model-power reference depths from the array layout."""
-    reference_dir = Path(reference_dir)
-    manifest = load_manifest(reference_dir)
-
+    depths: Sequence[float | int | str] | None,
+    sd_stats: Sequence[str],
+    include_index: bool,
+) -> tuple[list[str], list[str], list[str]]:
     available_depths = [str(depth) for depth in manifest["depth_labels"]]
     requested_depths = (
         available_depths if depths is None else _normalize_depths(depths)
@@ -271,6 +353,81 @@ def load_model_power_reference(
             "STD stats not available in model-power reference: "
             + ", ".join(missing_stats)
         )
+
+    required_files = [str(manifest["mean_file"])]
+    if include_index:
+        required_files.append(str(manifest["index_file"]))
+    for depth in requested_depths:
+        depth_files = manifest["std_files"][depth]
+        if "mean" in requested_stats:
+            try:
+                required_files.append(str(depth_files["mean"]))
+            except (KeyError, TypeError) as exc:
+                raise ValueError(
+                    f"Model-power manifest has no mean array for depth {depth}."
+                ) from exc
+        if {"CI_l", "CI_u"}.intersection(requested_stats):
+            try:
+                required_files.append(str(depth_files["CI"]))
+            except (KeyError, TypeError) as exc:
+                raise ValueError(
+                    f"Model-power manifest has no CI array for depth {depth}."
+                ) from exc
+    return requested_depths, requested_stats, required_files
+
+
+def validate_model_power_reference(
+    reference_dir: str | Path,
+    *,
+    depths: Sequence[float | int | str] | None = None,
+    sd_stats: Sequence[str] = DEFAULT_STATS,
+    include_index: bool = True,
+) -> dict:
+    """Validate the manifest and files required for a reference-data request."""
+    reference_dir = Path(reference_dir)
+    manifest = load_manifest(reference_dir)
+    _, _, required_files = _validate_reference_request(
+        manifest,
+        depths=depths,
+        sd_stats=sd_stats,
+        include_index=include_index,
+    )
+    missing = [
+        reference_dir / relative_path
+        for relative_path in dict.fromkeys(required_files)
+        if not (reference_dir / relative_path).is_file()
+    ]
+    if missing:
+        missing_text = "\n".join(f"  - {path}" for path in missing)
+        raise FileNotFoundError(
+            "Model-power reference data is incomplete. Missing required files:\n"
+            f"{missing_text}"
+        )
+    return manifest
+
+
+def load_model_power_reference(
+    reference_dir: str | Path,
+    *,
+    depths: Sequence[float | int | str] | None = None,
+    sd_stats: Sequence[str] = DEFAULT_STATS,
+    include_index: bool = True,
+    mmap_mode: str | None = "r",
+) -> ModelPowerReference:
+    """Load selected model-power reference depths from the array layout."""
+    reference_dir = Path(reference_dir)
+    manifest = validate_model_power_reference(
+        reference_dir,
+        depths=depths,
+        sd_stats=sd_stats,
+        include_index=include_index,
+    )
+    requested_depths, requested_stats, _ = _validate_reference_request(
+        manifest,
+        depths=depths,
+        sd_stats=sd_stats,
+        include_index=include_index,
+    )
 
     row_count = int(manifest["row_count"])
     mean_array = np.load(
