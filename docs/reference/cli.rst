@@ -36,11 +36,18 @@ Commands
       cftk --config cftk_init.json qc -s 1 2 3
 
 ``power``
-   Run statistical power analysis.
+   Run the legacy CpG-level analytical power workflow. It uses the pickled
+   ``reference_data.cpg_std`` table from ``cftk_init.json`` to evaluate
+   methylation effect-size and sample-size scenarios.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json power -s 100 -e 0.1
+
+   This command is separate from the model-development power calculator. The
+   latter simulates cross-validated feature selection and classification,
+   performs matched null calibration, and is available through the Python API
+   and Streamlit app described in :doc:`../user_guide/model_power`.
 
 ``diff``
    Run PCA, differential testing, and differential visualizations.

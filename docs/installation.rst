@@ -47,6 +47,20 @@ Include the Streamlit dependency when developing or deploying the calculator:
 The installation provides the ``cftk`` console command and the model-power
 Python modules. It does not install repository-root reference data.
 
+Run The Model-Power Calculator
+------------------------------
+
+From the repository root, install the web extra and start Streamlit:
+
+.. code-block:: bash
+
+   python -m pip install ".[web]"
+   streamlit run apps/model_power_calculator.py
+
+The app resolves ``data/`` relative to the repository root. Keep the app and
+reference-data directories in their checkout layout. Streamlit prints the
+local browser URL after startup, normally ``http://localhost:8501``.
+
 Run CFTK
 --------
 
@@ -66,7 +80,8 @@ Model-Power Reference Data
 
 The calculator algorithms and loaders are installed, but the aggregate CpG
 arrays under ``data/`` are intentionally excluded from wheels and source
-distributions. Supply a repository checkout explicitly:
+distributions. The 24 tracked calculator arrays occupy about 520 MB (496 MiB).
+Supply a repository checkout explicitly:
 
 .. code-block:: python
 
@@ -114,6 +129,6 @@ Build The Documentation
 .. code-block:: bash
 
    python -m pip install -r docs/requirements.txt
-   python -m sphinx -b html docs docs/_build/html
+   python -m sphinx -W -b html docs docs/_build/html
 
 The local HTML entry point is ``docs/_build/html/index.html``.

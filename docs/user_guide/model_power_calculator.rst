@@ -1,29 +1,12 @@
-Model Power Calculator
-======================
+Model-Development Power Calculator
+==================================
 
-.. grid:: 1
-   :gutter: 2
+The CFTK model-development power calculator evaluates whether a proposed
+liquid-biopsy biomarker-discovery cohort is likely to produce a useful and
+detectable internally cross-validated classifier.
 
-   .. grid-item-card:: CFTK Model Power Calculator
-      
-      The model power calculator evaluates whether a proposed Liquid Biopsy biomarker discovery cohort is likely to produce a useful and detectable internally cross-validated classifier.
-      
-      .. raw:: html
-
-         <hr>
-         <a href="https://cftk-model-power.streamlit.app/" target="_blank" style="
-            display: inline-block;
-            background-color: #1b1233;
-            color: white;
-            padding: 10px 20px;
-            text-decoration: none;
-            border-radius: 4px;
-            font-weight: bold;
-            margin-bottom: 8px;
-         ">Try now</a>
-         <br>
-
-
+The calculator reports three distinct operating characteristics. They answer
+different questions and should not be used interchangeably.
 
 Power Definitions
 -----------------
@@ -100,19 +83,6 @@ fitting are repeated inside each training fold. The same complete workflow is
 used for signal studies and null-calibration studies. The public calculator
 uses logistic regression as a fixed model-development pipeline.
 
-
-Section Navigation
-------------------
-
-.. contents::
-   :local:
-   :depth: 2
-
-The calculator reports three distinct operating characteristics. They answer
-different questions and should not be used interchangeably.
-
-
-
 Null Calibration
 ----------------
 
@@ -173,6 +143,32 @@ or noisy designs.
 These outputs evaluate internal model-development adequacy. They do not
 estimate external cohort performance, and independent validation remains
 necessary before claims of clinical generalizability.
+
+Run The App Locally
+-------------------
+
+Clone the repository, install the web extra, and start Streamlit from the
+repository root:
+
+.. code-block:: bash
+
+   git clone https://github.com/ChaorongC/CFTK.git
+   cd CFTK
+   python -m pip install ".[web]"
+   streamlit run apps/model_power_calculator.py
+
+The checkout must contain ``data/manifest.json`` and its companion arrays.
+The app uses those repository-local files and does not download reference data
+at runtime. Streamlit prints the local browser URL after startup, normally
+``http://localhost:8501``.
+
+Hosted Deployment
+-----------------
+
+A public calculator URL is not currently advertised because the configured
+Streamlit deployment requires platform authentication. When a deployment is
+made accessible without authentication, add its public URL to this page and
+the repository README before embedding it in the documentation.
 
 Reproducibility
 ---------------
