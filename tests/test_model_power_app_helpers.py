@@ -42,7 +42,17 @@ def test_manifest_depth_loading(tmp_path):
     from apps.model_power_app_helpers import available_depths_from_manifest
 
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"depth_labels": ["5", "10", "30"]})
+        json.dumps(
+            {
+                "format_version": 1,
+                "row_count": 1,
+                "depth_labels": ["5", "10", "30"],
+                "stats": ["mean", "CI_l", "CI_u"],
+                "index_file": "cpg_index.npz",
+                "mean_file": "cpg_mean.float32.npy",
+                "std_files": {"5": {}, "10": {}, "30": {}},
+            }
+        )
     )
     assert available_depths_from_manifest(tmp_path) == (5, 10, 30)
 
@@ -131,7 +141,7 @@ def test_workload_warning_uses_selected_precision_baseline():
         sample_sizes=(100, 200, 300, 400),
         depths=(5, 10, 20, 30),
         n_templates=5,
-        simulations_per_template=30,
+        simulations_per_template=20,
     ) is not None
 
     with pytest.raises(AppValidationError, match="computational limit"):
@@ -168,3 +178,22 @@ def test_app_uses_null_calibrated_engine_and_no_explicit_penalty():
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.keyword):
                 assert node.arg != "penalty"
+
+
+def test_app_reference_dir_stays_repository_local():
+    runtime_tree = ast.parse(Path("apps/model_power_app_runtime.py").read_text())
+    assignments = {
+        target.id: node.value
+        for node in runtime_tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    reference_expr = assignments["REFERENCE_DIR"]
+    assert isinstance(reference_expr, ast.BinOp)
+    assert isinstance(reference_expr.op, ast.Div)
+    assert isinstance(reference_expr.left, ast.Name)
+    assert reference_expr.left.id == "ROOT"
+    assert isinstance(reference_expr.right, ast.Constant)
+    assert reference_expr.right.value == "data"

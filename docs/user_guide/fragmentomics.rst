@@ -6,7 +6,7 @@ provided, CFTK attempts all configured fragmentomics analyses.
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json frag
+   cftk --config cftk_init.json frag
 
 Sub-Workflows
 -------------
@@ -33,13 +33,13 @@ Run only WPS:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json frag --wps
+   cftk --config cftk_init.json frag --wps
 
 Run occupancy and DELFI:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json frag --occupancy --delfi
+   cftk --config cftk_init.json frag --occupancy --delfi
 
 Reference Inputs
 ----------------

@@ -122,8 +122,10 @@ the empirical SD uncertainty scenario. Lower SD estimates are generally more
 optimistic, while upper SD estimates are generally more conservative.
 
 Sequencing depth enters through empirical CpG variance and missingness
-patterns derived from the bundled aggregate reference arrays. The calculator
-does not use or expose patient-level data.
+patterns derived from aggregate reference arrays stored in the GitHub
+repository. The Python distribution does not bundle these arrays. The
+Streamlit deployment loads them from its repository checkout, and the
+calculator does not use or expose patient-level data.
 
 Interpreting Additional Outputs
 -------------------------------

@@ -5,7 +5,7 @@ The ``process`` command runs raw processing steps 1 through 4.
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json process -s 1 2 3 4
+   cftk --config cftk_init.json process -s 1 2 3 4
 
 Steps
 -----
@@ -29,7 +29,7 @@ Use ``--parallel`` to process multiple samples concurrently per step:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json process -s 1 2 3 4 --parallel 4
+   cftk --config cftk_init.json process -s 1 2 3 4 --parallel 4
 
 CFTK splits configured cores across parallel samples. For example, if a step
 uses 20 total cores and ``--parallel 4`` is set, each sample receives 5 cores.
@@ -53,9 +53,9 @@ For a new compute environment, validate steps incrementally:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json process -s 1
-   python src/cftk.py --config cftk_init.json process -s 2
-   python src/cftk.py --config cftk_init.json process -s 3
-   python src/cftk.py --config cftk_init.json process -s 4
+   cftk --config cftk_init.json process -s 1
+   cftk --config cftk_init.json process -s 2
+   cftk --config cftk_init.json process -s 3
+   cftk --config cftk_init.json process -s 4
 
 Check logs and expected output files after each step before using ``run-all``.

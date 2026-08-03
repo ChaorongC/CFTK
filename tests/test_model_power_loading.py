@@ -1,5 +1,6 @@
 import importlib
 import ast
+import os
 import sys
 import tempfile
 import types
@@ -127,6 +128,55 @@ class ModelPowerLoadingTests(unittest.TestCase):
             self.assertIs(module.cpg_std_summary, loaded.cpg_std_summary)
             self.assertEqual(list(module.cpg_std_summary.columns), ["10_mean"])
             self.assertEqual(module.cpg_mean.dtype, np.float32)
+
+    def test_environment_reference_dir_is_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_dir = self._reference_dir(Path(tmp))
+            module = importlib.import_module("analysis.model_power")
+
+            with mock.patch.dict(
+                os.environ,
+                {"CFTK_MODEL_POWER_DATA": str(reference_dir)},
+                clear=False,
+            ):
+                loaded = module.load_default_model_power_reference(
+                    depths=[5],
+                    sd_stats=["mean"],
+                    mmap_mode=None,
+                )
+
+            self.assertEqual(list(loaded.cpg_std_summary.columns), ["5_mean"])
+
+    def test_explicit_reference_dir_overrides_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_dir = self._reference_dir(Path(tmp))
+            module = importlib.import_module("analysis.model_power")
+
+            with mock.patch.dict(
+                os.environ,
+                {"CFTK_MODEL_POWER_DATA": str(Path(tmp) / "missing")},
+                clear=False,
+            ):
+                loaded = module.load_default_model_power_reference(
+                    reference_dir=reference_dir,
+                    depths=[10],
+                    sd_stats=["mean"],
+                    mmap_mode=None,
+                )
+
+            self.assertEqual(list(loaded.cpg_std_summary.columns), ["10_mean"])
+
+    def test_missing_reference_explains_that_arrays_are_external(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            module = importlib.import_module("analysis.model_power")
+            module._DEFAULT_REFERENCE_DIR = Path(tmp) / "missing"
+
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(
+                    FileNotFoundError,
+                    "does not bundle its reference arrays",
+                ):
+                    module.load_default_model_power_reference(depths=[10])
 
 
 if __name__ == "__main__":

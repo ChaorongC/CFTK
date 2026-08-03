@@ -14,7 +14,7 @@ The ``qc`` command runs quality-control for three cfDNA features.
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json qc -s 1 2 3
+   cftk --config cftk_init.json qc -s 1 2 3
 
 
 

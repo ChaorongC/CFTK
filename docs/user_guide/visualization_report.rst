@@ -7,8 +7,8 @@ In standard CFTK workflow, visualization for the results were output automaticll
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json vis --mode all
-   python src/cftk.py --config cftk_init.json vis --mode power qc diff
+   cftk --config cftk_init.json vis --mode all
+   cftk --config cftk_init.json vis --mode power qc diff
 
 Report Generation
 -----------------
@@ -17,7 +17,7 @@ Generate a HTML report:
 
 .. code-block:: bash
 
-   python src/cftk.py --config cftk_init.json report
+   cftk --config cftk_init.json report
 
 Reports are written under:
 

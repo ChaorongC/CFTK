@@ -6,7 +6,7 @@ with ``--config``:
 
 .. code-block:: bash
 
-   python src/cftk.py --config path/to/cftk_init.json init
+   cftk --config path/to/cftk_init.json init
 
 Project Sections
 ------------------
