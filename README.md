@@ -59,3 +59,17 @@ cftk --config cftk_init.json process -s 1 2 3 4
 
 Some workflows require external bioinformatics tools and reference files that
 are not installed by Python packaging alone. See the documentation for details.
+
+## Model-Power Calculator
+
+Run the calculator from a repository checkout so it can access the aggregate
+reference arrays under `data/`:
+
+```bash
+python -m pip install ".[web]"
+streamlit run apps/model_power_calculator.py
+```
+
+The hosted Streamlit deployment currently requires platform authentication, so
+this README does not advertise it as a public calculator. Add the public URL
+here after the deployment is accessible without authentication.

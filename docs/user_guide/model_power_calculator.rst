@@ -144,23 +144,31 @@ These outputs evaluate internal model-development adequacy. They do not
 estimate external cohort performance, and independent validation remains
 necessary before claims of clinical generalizability.
 
-Interactive App
----------------
+Run The App Locally
+-------------------
 
-.. Replace this placeholder after the Streamlit Community Cloud app is deployed.
+Clone the repository, install the web extra, and start Streamlit from the
+repository root:
 
-.. raw:: html
+.. code-block:: bash
 
-   <iframe
-      src="https://REPLACE-WITH-CFTK-APP.streamlit.app/?embed=true"
-      width="100%"
-      height="1300px"
-      style="border: 0;"
-      title="CFTK Model-Development Power Calculator">
-   </iframe>
+   git clone https://github.com/ChaorongC/CFTK.git
+   cd CFTK
+   python -m pip install ".[web]"
+   streamlit run apps/model_power_calculator.py
 
-Standalone app:
-`https://REPLACE-WITH-CFTK-APP.streamlit.app <https://REPLACE-WITH-CFTK-APP.streamlit.app>`__
+The checkout must contain ``data/manifest.json`` and its companion arrays.
+The app uses those repository-local files and does not download reference data
+at runtime. Streamlit prints the local browser URL after startup, normally
+``http://localhost:8501``.
+
+Hosted Deployment
+-----------------
+
+A public calculator URL is not currently advertised because the configured
+Streamlit deployment requires platform authentication. When a deployment is
+made accessible without authentication, add its public URL to this page and
+the repository README before embedding it in the documentation.
 
 Reproducibility
 ---------------
