@@ -40,23 +40,23 @@ Completion criteria:
 
 ## 2. `cftk doctor`
 
-**Status:** TODO, starts after managed reference acquisition is stable.
+**Status:** IMPLEMENTED; real-environment validation remains in section 4.
 
-Why this is pending: A diagnostic command needs a stable tool, profile, and
-acquisition contract. Implementing it earlier would duplicate evolving
-initialization logic and provide incomplete assurances.
+Implementation followed the managed-reference work so diagnostics could reuse
+the stable tool, profile, lock, and acquisition contracts without downloading
+or repairing resources.
 
 Implementation:
 
-- Check the Python package and supported Python version.
-- Check required external executables and capture their versions, including
+- [x] Check the Python package and supported Python version.
+- [x] Check required external executables and capture their versions, including
   Trim Galore, bwa-meth, Sambamba, samtools, Picard, MethylDackel, bedtools,
   MultiQC, and workflow-specific optional tools.
-- Validate the selected profile manifest, hashes, assay/genome match, target
+- [x] Validate the selected profile manifest, hashes, assay/genome match, target
   BED coordinates, chromosome sizes, bwa-meth indexes, `.fai`, and `.dict`.
-- Validate the sample sheet, input readability, output-directory writability,
+- [x] Validate the sample sheet, input readability, output-directory writability,
   available disk space, and config/lock consistency.
-- Provide concise human output plus machine-readable JSON and meaningful exit
+- [x] Provide concise human output plus machine-readable JSON and meaningful exit
   codes for schedulers and CI.
 
 Completion criteria:
@@ -124,3 +124,32 @@ Completion criteria:
   predefined scientific and structural checks.
 - The complete validation recipe and provenance are reproducible in a clean
   environment before a production release is tagged.
+
+## 5. Known Readiness And Beginner-Workflow Gaps
+
+These limitations are intentionally recorded rather than hidden by the doctor
+implementation:
+
+- Historical hg38 BAMs may contain a 455-contig sequence dictionary while the
+  managed no-alt profile contains 195 contigs. Shared contig lengths are not
+  sufficient: downstream processing must use the exact ordered alignment
+  reference, and CFTK does not currently offer the historical profile.
+- A BAM path does not declare whether alignment, duplicate marking, and
+  extraction prerequisites are complete. Doctor reports missing read groups or
+  duplicate-marking provenance, but provenance warnings cannot prove what was
+  done outside CFTK.
+- BAM indexes can exist but be older than their BAM. Doctor treats this as a
+  readiness failure because region queries may be invalid.
+- Bismark alternatives remain accepted configuration values but have not been
+  validated for output parity with the default bwa-meth/MethylDackel path.
+- ``run-all`` continues after some failures and has no scientifically defined
+  resume contract. It is not a beginner-safe substitute for the planned
+  ``cftk run`` command.
+- Managed reference acquisition and bwa-meth index construction require large
+  cache and temporary-storage allocations. Shared HPC users may need to set
+  ``CFTK_REFERENCE_ROOT`` to a lab-managed location before initialization.
+- The base Python dependency set currently installs modeling and fragmentomics
+  packages for a core-processing user. In the validated environment this also
+  pulled XGBoost's large NCCL runtime. A future packaging change should define
+  tested ``processing``, ``analysis``, and ``web`` extras without changing
+  numerical dependencies silently.

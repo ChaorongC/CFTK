@@ -31,6 +31,25 @@ Commands
    ``CFTK_REFERENCE_REGISTRY`` override remains available. Pass
    ``--skip-reference-prep`` for validation only.
 
+``doctor``
+   Check whether selected core processing steps can start. The default checks
+   steps 1 through 4. Diagnostics continue after failures and do not download,
+   index, repair, or process data.
+
+   .. code-block:: bash
+
+      cftk --config cftk_init.json doctor
+      cftk --config cftk_init.json doctor --step 4 --json
+
+   ``--step {1,2,3,4}`` accepts one or more space-separated values.
+   ``--target-bed PATH`` validates an expert Picard covered-target override;
+   ``--skip-picard-metrics`` removes Picard metrics from the required step-3
+   tool checks. ``--json`` writes only machine-readable JSON to stdout.
+
+   Human checks use ``PASS``, ``WARN``, and ``FAIL``. No required failures
+   returns exit status 0; one or more failures returns 1; invalid arguments
+   return 2.
+
 ``process``
    Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's
    covered-target BED for Picard metrics, with a bundled source-checkout

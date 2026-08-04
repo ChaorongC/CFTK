@@ -14,6 +14,7 @@ from reference_profiles import (
     DEFAULT_PROFILE_ID,
     acquire_reference_profile,
     load_chrom_sizes,
+    load_reference_profile,
     managed_profile_available,
     sha256_file,
 )
@@ -32,7 +33,13 @@ _SAFE_CHARS = set("abcdefghijklmnopqrstuvwxyz"
                   "0123456789-_.")
 
 
-def load_config(config_path="./cftk_init.json"):
+def load_config(
+    config_path="./cftk_init.json",
+    *,
+    acquire_references=True,
+    verify_profile=False,
+    validate_profile=False,
+):
     if not os.path.exists(config_path):
         sys.exit(
             f"[cftk] ERROR: config not found: {config_path}\n"
@@ -41,7 +48,17 @@ def load_config(config_path="./cftk_init.json"):
     with open(config_path) as f:
         raw = json.load(f)
     raw = _strip_comments(raw)
-    cfg = resolve_schema_v2(raw, config_path) if raw.get("schema_version") == 2 else raw
+    cfg = (
+        resolve_schema_v2(
+            raw,
+            config_path,
+            acquire_references=acquire_references,
+            verify_profile=verify_profile,
+            validate_profile=validate_profile,
+        )
+        if raw.get("schema_version") == 2
+        else raw
+    )
     errors = _validate(cfg)
     if errors:
         disp("ERROR: invalid cftk_init.json:")
@@ -220,18 +237,16 @@ def _default_analysis(samples, control_group, case_group):
     }
 
 
-def resolve_schema_v2(raw, config_path, *, verify_profile=False):
-    """Expand a compact schema-v2 config into the established nested contract."""
+def resolve_reference_profile(
+    raw,
+    config_path,
+    *,
+    acquire_references=True,
+    verify_checksums=False,
+    validate_compatibility=False,
+):
+    """Resolve a schema-v2 profile, optionally without managed acquisition."""
     config_dir = Path(config_path).expanduser().resolve().parent
-    required = ("project_name", "samples")
-    missing = [key for key in required if not raw.get(key)]
-    if missing:
-        sys.exit(f"[init] ERROR: schema-v2 config is missing fields: {missing}.")
-    assay = raw.get("assay", DEFAULT_ASSAY)
-    genome = raw.get("genome", DEFAULT_GENOME)
-    sample_sheet = _resolve_relative(raw["samples"], config_dir)
-    sample_data = load_sample_sheet(sample_sheet)
-
     reference_root_value = (
         os.environ.get("CFTK_REFERENCE_ROOT")
         or raw.get("reference_root")
@@ -246,12 +261,50 @@ def resolve_schema_v2(raw, config_path, *, verify_profile=False):
         profile_version = profile_spec.get("version")
     else:
         sys.exit("[init] ERROR: reference_profile must be a string or object.")
-    profile = acquire_reference_profile(
-        mode=raw.get("reference_mode", "local"),
-        reference_root=reference_root,
-        profile_id=profile_id,
-        version=profile_version,
+    if acquire_references:
+        profile = acquire_reference_profile(
+            mode=raw.get("reference_mode", "local"),
+            reference_root=reference_root,
+            profile_id=profile_id,
+            version=profile_version,
+            verify_checksums=verify_checksums,
+            validate_compatibility=validate_compatibility,
+        )
+    else:
+        profile = load_reference_profile(
+            reference_root,
+            profile_id,
+            profile_version,
+            verify_checksums=verify_checksums,
+            validate_compatibility=validate_compatibility,
+        )
+    return profile
+
+
+def resolve_schema_v2(
+    raw,
+    config_path,
+    *,
+    acquire_references=True,
+    verify_profile=False,
+    validate_profile=False,
+):
+    """Expand a compact schema-v2 config into the established nested contract."""
+    config_dir = Path(config_path).expanduser().resolve().parent
+    required = ("project_name", "samples")
+    missing = [key for key in required if not raw.get(key)]
+    if missing:
+        sys.exit(f"[init] ERROR: schema-v2 config is missing fields: {missing}.")
+    assay = raw.get("assay", DEFAULT_ASSAY)
+    genome = raw.get("genome", DEFAULT_GENOME)
+    sample_sheet = _resolve_relative(raw["samples"], config_dir)
+    sample_data = load_sample_sheet(sample_sheet)
+    profile = resolve_reference_profile(
+        raw,
+        config_path,
+        acquire_references=acquire_references,
         verify_checksums=verify_profile,
+        validate_compatibility=validate_profile,
     )
     if profile["assay"] != assay or profile["genome"] != genome:
         sys.exit(
