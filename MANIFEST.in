@@ -1,2 +1,3 @@
+graft examples
 prune data
 global-exclude *.npy *.npz *.pkl

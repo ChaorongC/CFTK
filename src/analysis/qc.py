@@ -178,8 +178,6 @@ def _run_dinucleotide(args):
     bams      = args.infile
     ref_fa    = args.ref_fa
     frag_len  = getattr(args, "fragment",  167)
-    clip_r1   = getattr(args, "clip_r1",   0)
-    clip_r2   = getattr(args, "clip_r2",   0)
     cores     = getattr(args, "cores",     1)
     workers   = getattr(args, "parallel",  1) or 1
     out_dir   = args.output_dir
@@ -212,16 +210,11 @@ def _run_dinucleotide(args):
         cmd = (
             f"bedtools bamtobed -bedpe -mate1 -i {bam} 2>/dev/null | "
             f"awk -v OFS='\\t' -v sample={sample} "
-            f"-v cr1={clip_r1} -v cr2={clip_r2} '{{"
-            f"if ($9 == \"+\") {{"
-            f"  start = ($2-cr1 < $5) ? $2-cr1 : $5;"
-            f"  end   = ($3 > $6+cr2) ? $3 : $6+cr2;"
-            f"  print $1, start, end, sample;"
-            f"}} else {{"
-            f"  start = ($2 < $5-cr1) ? $2 : $5-cr1;"
-            f"  end   = ($3+cr2 > $6) ? $3+cr2 : $6;"
-            f"  print $1, start, end, sample;"
-            f"}}}}' | "
+            f"'{{"
+            f"start = ($2 < $5) ? $2 : $5;"
+            f"end   = ($3 > $6) ? $3 : $6;"
+            f"print $1, start, end, sample;"
+            f"}}' | "
             f"awk -v OFS='\\t' '$3-$2=={frag_len} {{print}}' "
             f"> {sample_frag_tmp} || exit 1"
         )

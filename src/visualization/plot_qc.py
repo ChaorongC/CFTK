@@ -52,13 +52,13 @@ def plot_methylation_distribution(matrix_path, png_path, pdf_path, args):
 
 # ── Fragment length ───────────────────────────────────────────────────────────
 
-def _load_fragment_ratios(prefix, clip_r1=0, clip_r2=0):
+def _load_fragment_ratios(prefix):
     raw_files = sorted(glob.glob(f"{prefix}.*.raw.csv"))
     if not raw_files:
         return {}, None, None
 
     base     = pd.DataFrame({"Size": np.arange(500)})
-    size_arr = np.arange(500) + clip_r1 + clip_r2
+    size_arr = np.arange(500)
 
     sample_ratios = {}
     for fp in raw_files:
@@ -99,11 +99,9 @@ def _frag_ax_style(ax, size_arr, peak):
 
 
 def plot_fragment_length(prefix, png_path, pdf_path, args):
-    clip_r1      = getattr(args, "clip_r1", 0)
-    clip_r2      = getattr(args, "clip_r2", 0)
     group_labels = getattr(args, "group_labels", None)
 
-    sample_ratios, size_arr, _ = _load_fragment_ratios(prefix, clip_r1, clip_r2)
+    sample_ratios, size_arr, _ = _load_fragment_ratios(prefix)
     if not sample_ratios:
         print("[plot_qc] No fragment length files found, skipping.")
         return
@@ -288,4 +286,3 @@ def plot_power_curves(data, png_path, pdf_path, threshold=0.8):
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
     _save(fig, png_path, pdf_path)
-

@@ -8,9 +8,9 @@ For detailed guidance and tutorial, please refer to the [CFTK website](https://c
 You can also use the [CFTK model power calculator](https://cftk-model-power.streamlit.app/) before you start to process your cfDNA cohort.
 
 
-The package is under active development. The current command-line entry point is
-implemented in `src/cftk.py` and is driven by a project configuration file named
-`cftk_init.json`.
+The package is under active development. The `cftk` command uses a compact
+project configuration named `cftk_init.json` plus a TSV sample sheet. Existing
+legacy nested configurations remain supported.
 
 The model-development power API is included in the Python distribution, but its
 large aggregate reference arrays are not. The repository keeps those arrays in
@@ -42,11 +42,34 @@ Install the Python package from the checkout:
 python -m pip install .
 ```
 
-Validate the example configuration:
+Create a project directory and start the guided initializer:
 
 ```bash
-cftk --config cftk_init.json init
+mkdir example_study
+cd example_study
+cftk init
 ```
+
+`cftk init` uses the current directory, discovers only unambiguous single-lane
+FASTQ pairs or BAMs, and asks for a local reference root. If it creates a
+`samples.tsv` template, fill in the explicit `group` and `role` columns and run
+`cftk init` again. Initialization validates the selected profile and writes a
+portable `cftk.lock.json`, then builds bwa-meth, samtools, and Picard reference
+companions. Managed reference downloads are reserved but not enabled until an
+immutable checksummed release registry is published.
+
+For batch setup, provide the required inputs explicitly:
+
+```bash
+cftk init --non-interactive \
+  --sample-sheet samples.tsv \
+  --reference-root /shared/references/cftk
+```
+
+Reference profiles live under
+`<reference-root>/<profile-id>/<version>/manifest.json`. Set
+`CFTK_REFERENCE_ROOT` to relocate a project without editing its JSON. See
+`examples/` for the compact config, sample sheet, and manifest formats.
 
 Inspect available commands:
 
@@ -54,15 +77,24 @@ Inspect available commands:
 cftk --help
 ```
 
-Run a raw processing step after editing `cftk_init.json` for your samples,
-reference files, tools, and output directory:
+Run raw processing after initialization:
 
 ```bash
 cftk --config cftk_init.json process -s 1 2 3 4
 ```
 
+Step 3 also writes Picard target and alignment metrics. Schema-v2 projects use
+the selected profile's covered-target BED. `--target-bed PATH` remains an
+expert one-run override; legacy source checkouts retain the bundled fallback.
+
 Some workflows require external bioinformatics tools and reference files that
 are not installed by Python packaging alone. See the documentation for details.
+
+## Roadmap
+
+Managed reference acquisition, `cftk doctor`, a fail-safe beginner `cftk run`,
+and real-data end-to-end validation remain explicit release TODOs. Their
+prerequisites and completion criteria are tracked in [TODO.md](TODO.md).
 
 ## Model-Power Calculator
 

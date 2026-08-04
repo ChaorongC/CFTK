@@ -5,13 +5,10 @@ Key changes vs previous version:
   N7  parse_mbias_txt()      — Rewritten for MethylDackel --txt TSV format:
                                 Strand/Read/Position/nMethylated/nUnmethylated
                                 Saves structured TSV to mbias_data/ for report plots.
-  N7b parse_chh_bedgraph()   — New: reads {name}_chh_CHH.bedGraph produced by
-                                P3b extra CHH extract step, computes weighted mean
-                                CHH methylation% → bisulfite_conversion_rate.
+  N7b parse_chh_bedgraph()   — Legacy helper for historical CHH bedGraphs.
 
 Run-order requirements:
   - markdup_dup_pct:          process step 3 with P1 patch (sambamba stderr capture)
-  - bisulfite_conversion_rate: process step 4 with P3b patch (CHH extract)
   - median_frag_len:           cftk qc -s 2 (bamPEFragmentSize)
   All missing files → NaN (never an error).
 """
@@ -535,7 +532,6 @@ def collect_qc_metrics(
 
     Missing data handling (all return NaN, never error):
       - markdup_dup_pct:          P1 patch + step 3 re-run required
-      - bisulfite_conversion_rate: P3b patch + step 4 re-run required
       - mbias_cpg_meth_pct:       P3a patch + step 4 re-run required
       - median_frag_len:          cftk qc -s 2 must run before cftk qc -s 0
     """
@@ -597,10 +593,6 @@ def collect_qc_metrics(
             os.path.join(paths["methylation"], f"{name}_mbias.txt"),
             save_tsv_dir=mbias_tsv_dir,
         ))
-
-        # N7b: CHH bedGraph → bisulfite_conversion_rate (requires P3b patch; NaN if missing)
-        row.update(parse_chh_bedgraph(
-            os.path.join(paths["methylation"], f"{name}_chh_CHH.bedGraph")))
 
         # N8: fragment CSV (NaN if cftk qc -s 2 not yet run)
         frag_prefix = os.path.join(paths["qc"], "2_fragment_length", "fragment_length")

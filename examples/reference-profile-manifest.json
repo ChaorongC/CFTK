@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "profile_id": "twist_human_methylome_hg38",
+  "version": "1.0.0",
+  "assay": "twist_human_methylome",
+  "genome": "hg38",
+  "components": {
+    "genome_fa": {"path": "genome/hg38.fa"},
+    "genome_2bit": {"path": "genome/hg38.2bit"},
+    "chrom_sizes": {"path": "genome/hg38.chrom.sizes"},
+    "target_bed": {"path": "assay/covered_targets.bed"}
+  }
+}

@@ -152,8 +152,6 @@
   "analysis": {
     "qc": {
       "params": {
-        "clip_r1": 0,
-        "clip_r2": 0,
         "fragment": 167,
         "step_size": 2000
       }

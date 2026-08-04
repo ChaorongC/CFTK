@@ -1,63 +1,65 @@
-Configuration Setting
-=====================
+Configuration Schema
+====================
 
-The example config is ``cftk_init.json`` at the CFTK repository. It is JSON and
-does not support comments.
+Schema V2
+---------
 
-Required Information
------------------------
+``schema_version``
+   Must be integer ``2``.
 
-- ``project_name``
-- ``output_dir``
-- ``comparison``
-- ``samples``
-- ``reference_data``
-- ``process``
-- ``analysis``
+``project_name``
+   Required project identifier.
 
-Required Reference
------------------------
+``output_dir``
+   Optional output root, relative to the config file when not absolute.
+   Defaults to ``.``.
 
-- ``genome_fa``
-- ``genome_2bit``
-- ``chrom_sizes``
+``samples``
+   Required path to the strict TSV sample sheet, relative to the config file
+   when not absolute.
 
+``assay`` and ``genome``
+   Default to ``twist_human_methylome`` and ``hg38``. Both must exactly match
+   the selected profile manifest.
 
-Comparison Format
+``reference_mode``
+   ``local`` is currently supported. ``managed`` is reserved and fails with an
+   actionable message until CFTK publishes an immutable registry.
+
+``reference_root``
+   Root containing profile directories. ``CFTK_REFERENCE_ROOT`` overrides this
+   value at runtime for portability.
+
+``reference_profile``
+   A profile ID string or an object containing ``id`` and optional ``version``.
+   When version is omitted, exactly one installed version must exist.
+
+``process``
+   Optional compact object with positive integer ``cores``,
+   ``parallel_samples``, and ``min_depth`` values. Defaults are 20, 1, and 10.
+
+Sample Sheet Schema
+-------------------
+
+The required columns are ``sample``, ``group``, ``role``, ``input_type``,
+``r1``, ``r2``, and ``bam``. The first release supports exactly two groups and
+requires one ``control`` role and one ``case`` role. FASTQ samples require R1
+and R2; BAM samples require a BAM path. Rows and group insertion order are
+preserved.
+
+Resolved Contract
 -----------------
 
-``comparison`` must use ``GroupA_vs_GroupB``. Both group names must exist under
-``samples``.
+CFTK resolves schema v2 internally into the legacy nested keys expected by
+existing commands: ``comparison``, grouped ``samples``, ``reference_data``,
+``process``, and ``analysis``. The profile ``target_bed`` is used for Picard
+coverage only; it does not filter methylation calling or downstream analyses.
 
-.. code-block:: json
+Legacy Schema
+-------------
 
-   {
-     "comparison": "Control_vs_sALS",
-     "samples": {
-       "Control": [],
-       "sALS": []
-     }
-   }
-
-Output Paths
-------------
-
-CFTK derives output paths from ``output_dir``. The helper function
-``get_work_paths`` in ``src/init.py`` defines the canonical layout.
-
-Analysis Blocks
----------------
-
-The ``analysis`` section controls downstream workflows:
-
-- ``qc.params`` for QC settings.
-- ``power.params`` for sample size, effect size, depth, and power plots.
-- ``diff.params`` for modalities, colors, and heatmap feature counts.
-- ``dmr`` for metilene and DMR annotation settings.
-- ``frag`` for occupancy, WPS, DELFI, end motif, and cleavage settings.
-- ``mesa.params`` for modalities, classifiers, feature size, subset, and repeat.
-
-Example File
-------------
-
-The full example file is included in the repository as ``cftk_init.json``.
+Configs without ``schema_version: 2`` retain the established requirements:
+``project_name``, ``output_dir``, ``comparison``, ``samples``,
+``reference_data``, ``process``, and ``analysis``. Required references are
+``genome_fa``, ``genome_2bit``, and ``chrom_sizes``. Legacy behavior and field
+names are preserved.

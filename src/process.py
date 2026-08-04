@@ -26,12 +26,28 @@ Fixes vs previous version:
   - P1: sambamba markdup stderr captured to {name}.markdup_metrics.txt.
 """
 
+import hashlib
 import os
 import re
+import shlex
 import sys
+from pathlib import Path
 from joblib import Parallel, delayed
 from util import disp, run_command
-from init import load_config, get_all_samples, get_work_paths, get_bam
+from init import (
+    get_all_samples,
+    get_bam,
+    get_sequence_dictionary_path,
+    get_work_paths,
+    load_config,
+)
+
+
+DEFAULT_TARGET_BED = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "covered_targets_Twist_Methylome_hg38_annotated_collapsed.bed"
+)
 
 STEPS = {
     1: "Adapter trimming",
@@ -162,8 +178,12 @@ def _step2_align(sample, r1, r2, step_cfg, ref_data, paths, per_cores):
     bam   = os.path.join(out, f"{name}.bam")
 
     if tool == "bwameth":
+        read_group = (
+            f"@RG\\tID:{name}\\tSM:{name}\\tLB:{name}\\tPL:ILLUMINA"
+        )
         cmd = (
-            f"bwameth.py --reference {ref} -t {per_cores} {extra} {r1} {r2} | "
+            f"bwameth.py --reference {ref} -t {per_cores} "
+            f"--read-group {shlex.quote(read_group)} {extra} {r1} {r2} | "
             f"sambamba view -t {per_cores} "
             f"-F 'not secondary_alignment and not failed_quality_control "
             f"and not supplementary and proper_pair and mapping_quality > 0' "
@@ -230,6 +250,92 @@ def _step3_markdup(sample, bam_in, step_cfg, ref_data, paths, per_cores):
     return bam_out
 
 
+def _resolve_target_bed(target_bed=None):
+    """Resolve an explicit target BED or the repository Twist panel default."""
+    candidate = Path(target_bed).expanduser() if target_bed else DEFAULT_TARGET_BED
+    if not candidate.is_file():
+        source = f"requested target BED {candidate}" if target_bed else (
+            f"default Twist target BED {candidate}"
+        )
+        sys.exit(
+            f"[step3] ERROR: {source} was not found. Provide --target-bed PATH "
+            "or use --skip-picard-metrics for a workflow that does not require "
+            "Twist panel metrics."
+        )
+    return str(candidate.resolve())
+
+
+def _prepare_picard_interval_list(target_bed, reference_fa, paths):
+    """Create the target interval list once for all post-markdup metrics."""
+    sequence_dict = get_sequence_dictionary_path(reference_fa)
+    if not os.path.isfile(sequence_dict):
+        sys.exit(
+            f"[step3] ERROR: Picard sequence dictionary not found: {sequence_dict}. "
+            "Run 'cftk init' to prepare the reference."
+        )
+
+    stem = os.path.basename(target_bed)
+    if stem.endswith(".bed"):
+        stem = stem[:-4]
+    digest = hashlib.sha256()
+    for input_path in (target_bed, sequence_dict):
+        with open(input_path, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+    profile_key = f"{stem}.{digest.hexdigest()[:12]}"
+    metrics_dir = os.path.join(paths["markdup"], "picard_metrics", profile_key)
+    os.makedirs(metrics_dir, exist_ok=True)
+    interval_list = os.path.join(metrics_dir, f"{stem}.interval_list")
+    if os.path.exists(interval_list):
+        disp(f"[picard] interval list already present: {interval_list}")
+        return interval_list
+
+    cmd = (
+        f"picard BedToIntervalList I={shlex.quote(target_bed)} "
+        f"O={shlex.quote(interval_list)} SD={shlex.quote(sequence_dict)} || exit 1"
+    )
+    run_command(cmd, label="picard BedToIntervalList")
+    return interval_list
+
+
+def _run_picard_metrics(sample, bam_in, reference_fa, interval_list, paths):
+    """Collect Twist target and general Picard performance metrics for a BAM."""
+    name = sample["name"]
+    metrics_dir = os.path.dirname(interval_list)
+    os.makedirs(metrics_dir, exist_ok=True)
+    hs_metrics = os.path.join(metrics_dir, f"{name}.hs_metrics.txt")
+    per_target = os.path.join(metrics_dir, f"{name}.per_target_coverage.txt")
+    multiple_prefix = os.path.join(metrics_dir, f"{name}.multiple_metrics")
+    multiple_done = f"{multiple_prefix}.done"
+
+    if os.path.exists(hs_metrics) and os.path.exists(per_target):
+        disp(f"  [picard] {name} — HsMetrics already present, skipping")
+    else:
+        cmd = (
+            f"picard CollectHsMetrics I={shlex.quote(bam_in)} "
+            f"O={shlex.quote(hs_metrics)} R={shlex.quote(reference_fa)} "
+            f"BAIT_INTERVALS={shlex.quote(interval_list)} "
+            f"TARGET_INTERVALS={shlex.quote(interval_list)} "
+            f"PER_TARGET_COVERAGE={shlex.quote(per_target)} "
+            f"MINIMUM_MAPPING_QUALITY=20 COVERAGE_CAP=1000 "
+            f"NEAR_DISTANCE=500 || exit 1"
+        )
+        run_command(cmd, label=f"picard CollectHsMetrics [{name}]")
+
+    if os.path.exists(multiple_done):
+        disp(f"  [picard] {name} — multiple metrics already present, skipping")
+    else:
+        cmd = (
+            f"picard CollectMultipleMetrics I={shlex.quote(bam_in)} "
+            f"O={shlex.quote(multiple_prefix)} R={shlex.quote(reference_fa)} "
+            f"PROGRAM=CollectGcBiasMetrics "
+            f"PROGRAM=CollectInsertSizeMetrics "
+            f"PROGRAM=CollectAlignmentSummaryMetrics "
+            f"|| exit 1; touch {shlex.quote(multiple_done)}"
+        )
+        run_command(cmd, label=f"picard CollectMultipleMetrics [{name}]")
+
+
 def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
     tool  = step_cfg["tool"]
     depth = step_cfg["params"].get("min_depth", 10)
@@ -243,13 +349,10 @@ def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
     if tool == "methyldackel":
         mbias_txt  = f"{prefix}_mbias.txt"
         mbias_temp = f"{prefix}_mbias_OT_OB.temp"
-        chh_prefix = f"{prefix}_chh"
-        chh_bg     = f"{chh_prefix}_CHH.bedGraph"
         # P3a: mbias --txt outputs per-position TSV to stdout; OT/OB coords to stderr.
         #      Use subprocess.run(capture_output=True) instead of shell redirection
         #      to avoid run_command() interference with stdout (cat: invalid option --h).
-        # P3b: extra CHH extract appended after CpG extract.
-        # run_command() is used for the extract steps (no stdout capture needed).
+        # run_command() is used for the extract step (no stdout capture needed).
         import subprocess as _sp, re as _re
 
         # Step A: mbias --txt → capture stdout (TSV) and stderr (OT/OB coords)
@@ -283,24 +386,20 @@ def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
         # Extract OT/OB from stderr for the extract step
         ot_ob_m = _re.search(r"--OT\s+(\S+)\s+--OB\s+(\S+)", mbias_proc.stderr)
         if not ot_ob_m:
-            disp(f"  [mbias] WARNING: could not parse OT/OB from stderr — "
-                 f"running extract without inclusion coordinates")
-            ot_flag = ""
-            ob_flag = ""
-        else:
-            ot_flag = f"--OT {ot_ob_m.group(1)}"
-            ob_flag = f"--OB {ot_ob_m.group(2)}"
+            sys.exit(
+                f"[step4] could not parse OT/OB inclusion bounds for {name}; "
+                f"inspect {mbias_temp}. Methylation extraction was not run."
+            )
+        ot_flag = f"--OT {ot_ob_m.group(1)}"
+        ob_flag = f"--OB {ot_ob_m.group(2)}"
 
         # Step B: CpG extract
         cmd = (
-            f"MethylDackel extract --minDepth {depth} --maxVariantFrac 0.25 "
+            f"MethylDackel extract --mergeContext --minDepth {depth} "
+            f"--maxVariantFrac 0.25 "
             f"-@ {per_cores} "
             f"{ot_flag} {ob_flag} "
-            f"-o {prefix} {extra} {ref} {bam_in} || exit 1; "
-            # P3b: CHH extract (inline checkpoint)
-            f"[ -f {chh_bg} ] || "
-            f"MethylDackel extract --CHH --noCpG --minDepth 1 "
-            f"-@ {per_cores} -o {chh_prefix} {ref} {bam_in} || exit 1"
+            f"-o {prefix} {extra} {ref} {bam_in} || exit 1"
         )
     elif tool == "bismark_extractor":
         cmd = (
@@ -346,8 +445,6 @@ def _merge_cpg(bedgraph_files, samples, paths):
         f"bash -c '"
         f"{bedtools} unionbedg -header -names {col_names_str} -filler NA "
         f"-i {stripped}"
-        f" | cut -f1,3-"
-        f" | sed s/end/pos/"
         f" > {tmp_path}'"
     )
 
@@ -357,8 +454,14 @@ def _merge_cpg(bedgraph_files, samples, paths):
         sys.exit("[merge] ERROR: bedtools unionbedg failed.")
 
     matrix = pd.read_csv(tmp_path, sep="\t")
-    chrom_col = matrix.columns[0]
-    pos_col   = matrix.columns[1]
+    if matrix.shape[1] < 4:
+        sys.exit("[merge] ERROR: bedtools unionbedg returned an invalid table.")
+    chrom_col, start_col, end_col = matrix.columns[:3]
+    # MethylDackel merged CpGs span C and G. Keep the established 1-based
+    # cytosine coordinate rather than using BED end, which would identify G.
+    matrix.insert(1, "pos", pd.to_numeric(matrix[start_col]) + 1)
+    matrix = matrix.drop(columns=[start_col, end_col])
+    pos_col = "pos"
     matrix.index = matrix[chrom_col].astype(str) + "_" + matrix[pos_col].astype(str)
     matrix.index.name = "cpg_id"
     matrix = matrix.drop(columns=[chrom_col, pos_col])
@@ -523,6 +626,18 @@ def _run_step3(sample, proc, ref, paths, per_cores):
         return None
     return _step3_markdup(sample, bam_in,
                           proc["step3_markdup"], ref, paths, per_cores)
+
+
+def _run_step3_with_metrics(
+    sample, proc, ref, paths, per_cores, interval_list
+):
+    """Run or reuse markdup, then fill any missing Picard metric outputs."""
+    bam_out = _run_step3(sample, proc, ref, paths, per_cores)
+    if bam_out and os.path.exists(bam_out):
+        _run_picard_metrics(
+            sample, bam_out, ref["genome_fa"], interval_list, paths
+        )
+    return bam_out
 
 
 def _run_step4(sample, proc, ref, paths, per_cores):
@@ -704,6 +819,15 @@ def process(args, config_path="./cftk_init.json"):
     if invalid:
         sys.exit(f"[process] Invalid steps: {invalid}. Valid: {list(STEPS.keys())}")
 
+    picard_interval_list = None
+    if 3 in steps and not getattr(args, "skip_picard_metrics", False):
+        target_bed = _resolve_target_bed(
+            getattr(args, "target_bed", None) or ref.get("target_bed")
+        )
+        picard_interval_list = _prepare_picard_interval_list(
+            target_bed, ref["genome_fa"], paths
+        )
+
     disp(f"Samples          : {len(samples)}")
     disp(f"Steps            : {[STEPS[s] for s in steps]}")
     disp(f"Parallel samples : {parallel}")
@@ -723,13 +847,20 @@ def process(args, config_path="./cftk_init.json"):
              f"(parallel={parallel})")
         disp(sep)
 
-        fn        = _STEP_FN[step]
         per_cores = step_cores[step]
-
-        results = Parallel(n_jobs=parallel, backend="multiprocessing")(
-            delayed(fn)(s, proc, ref, paths, per_cores)
-            for s in samples
-        )
+        if step == 3 and picard_interval_list:
+            results = Parallel(n_jobs=parallel, backend="multiprocessing")(
+                delayed(_run_step3_with_metrics)(
+                    s, proc, ref, paths, per_cores, picard_interval_list
+                )
+                for s in samples
+            )
+        else:
+            fn = _STEP_FN[step]
+            results = Parallel(n_jobs=parallel, backend="multiprocessing")(
+                delayed(fn)(s, proc, ref, paths, per_cores)
+                for s in samples
+            )
 
         if step == 4:
             bedgraph_results = results

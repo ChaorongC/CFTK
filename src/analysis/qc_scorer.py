@@ -119,17 +119,6 @@ RULES: list[MetricRule] = [
     ),
     # ── Methylation quality ──────────────────────────────────────────────────
     MetricRule(
-        col="bisulfite_conversion_rate",
-        label="Bisulfite conversion rate",
-        weight=20,
-        pass_lo=99, pass_hi=100,
-        warn_lo=97, warn_hi=100,
-        higher_is_better=True,
-        fmt=".2f", unit="%",
-        note="Estimated from CHH context methylation (100 - CHH%). "
-             "<97% indicates incomplete bisulfite conversion.",
-    ),
-    MetricRule(
         col="cpg_global_meth_pct",
         label="Global CpG methylation",
         weight=10,
