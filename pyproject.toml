@@ -36,7 +36,7 @@ cftk = "cftk:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["cftk", "init", "process", "util"]
+py-modules = ["cftk", "init", "process", "reference_profiles", "util"]
 include-package-data = false
 
 [tool.setuptools.packages.find]

@@ -56,6 +56,12 @@
           "version": "1.0.1",
           "purpose": "Duplicate marking and removal on aligned BAM files.",
           "url": "https://lomereiter.github.io/sambamba/"
+        },
+        {
+          "name": "Picard",
+          "version": "not captured",
+          "purpose": "Reference dictionary creation plus post-markdup target coverage and general alignment metrics.",
+          "url": "https://broadinstitute.github.io/picard/"
         }
       ]
     },
@@ -65,7 +71,7 @@
         {
           "name": "MethylDackel",
           "version": "0.6.1",
-          "purpose": "Per-CpG methylation calling, CHH context extraction (bisulfite conversion QC), and M-bias estimation.",
+          "purpose": "Merged per-CpG methylation calling and M-bias estimation.",
           "url": "https://github.com/dpryan79/MethylDackel"
         },
         {

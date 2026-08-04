@@ -1,0 +1,3 @@
+sample	group	role	input_type	r1	r2	bam
+control_1	Healthy	control	fastq	reads/control_1_R1.fastq.gz	reads/control_1_R2.fastq.gz	""
+case_1	Disease	case	fastq	reads/case_1_R1.fastq.gz	reads/case_1_R2.fastq.gz	""

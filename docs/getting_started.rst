@@ -1,40 +1,37 @@
 Getting Started
 ===============
 
-CFTK workflow is organized by a project configuration file and worked as a command-line
-dispatcher. Edit ``cftk_init.json`` for your samples, then run the commands that
-match the analysis stage you need.
+CFTK uses a compact project JSON, a TSV sample sheet, and one versioned
+reference profile. Existing legacy nested JSON remains supported.
 
-1. Json Config Example
-==========================
+1. Initialize A Project
+=======================
 
-Below is the standard CFTK configuration file used to set the workflow:
-
-.. literalinclude:: _static/cftk_init.json
-   :language: json
-   :linenos:
-   :caption: cftk_init.json
-   :class: long-json-block
-
-.. raw:: html
-
-   <style>
-   .long-json-block .highlight {
-       max-height: 400px !important;
-       overflow-y: auto !important;
-   }
-   </style>
-
-
-2. Validate The Config
-----------------------
+From the project directory, run:
 
 .. code-block:: bash
 
-   cftk --config cftk_init.json init
+   cftk init
 
-This checks required top-level sections, sample definitions, comparison group
-names, and required reference fields.
+The guided setup uses current-directory defaults. It may create ``samples.tsv``
+from unambiguous FASTQ/BAM inputs and stop so you can assign explicit
+``control`` and ``case`` roles. Rerun the same command after editing the sheet.
+You need a local profile under one reference root; managed download is not yet
+enabled.
+
+2. Inspect The Compact Files
+----------------------------
+
+See :doc:`user_guide/configuration` for the complete contract. Minimal examples
+are stored under ``examples/`` in the repository:
+
+- ``cftk_init.schema-v2.json``
+- ``samples.tsv``
+- ``reference-profile-manifest.json``
+
+Initialization validates file hashes, target BED coordinates, chromosome
+sizes, and the prepared FASTA index. It writes ``cftk.lock.json`` without
+machine-specific reference paths.
 
 3. The Help Commands
 --------------------
@@ -45,7 +42,7 @@ names, and required reference fields.
 
 The major commands are:
 
-- ``init``: validate and summarize ``cftk_init.json``.
+- ``init``: validate the config and prepare the reference genome.
 - ``process``: run raw processing steps 1 through 4.
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
@@ -61,7 +58,7 @@ The major commands are:
 4. Run Rawdata Processing
 -------------------------
 
-After set up all the related paths in ``cftk_init.json``:
+After initialization:
 
 .. code-block:: bash
 

@@ -14,13 +14,48 @@ Steps
    Uses ``trim_galore`` or ``fastp`` for FASTQ inputs.
 
 2. Bisulfite alignment
-   Uses ``bwameth`` or ``bismark``.
+   Uses ``bwameth`` or ``bismark``. bwa-meth receives an automatically
+   generated Illumina read group with the configured sample name as ``ID``,
+   ``SM``, and ``LB``.
 
 3. Duplicate marking
-   Uses ``sambamba``, ``picard``, or ``samblaster``.
+   Uses ``sambamba``, ``picard``, or ``samblaster``. CFTK then runs Picard
+   ``CollectHsMetrics`` and ``CollectMultipleMetrics`` on the marked BAM.
 
 4. CpG methylation calling
-   Uses ``MethylDackel`` or ``bismark_methylation_extractor``.
+   Uses ``MethylDackel`` or ``bismark_methylation_extractor``. The MethylDackel
+   default runs M-bias first, requires parseable OT/OB inclusion bounds, and
+   calls merged CpGs with ``--mergeContext``, ``--maxVariantFrac 0.25``, and
+   configurable ``--minDepth`` (default 10). CHH and CHG calls are not generated
+   by the default process.
+
+Twist Target Metrics
+--------------------
+
+For step 3, CFTK converts the Twist Human Methylome covered-target BED to one
+Picard interval list and uses it for both bait and target intervals. Metrics
+use mapping quality 20, coverage cap 1000, and near distance 500. The multiple
+metrics collection is limited to GC bias, insert size, and alignment summary.
+Outputs are written under:
+
+.. code-block:: text
+
+   <output_dir>/results/1_process/3_markdup/picard_metrics/
+
+Each target BED and sequence-dictionary combination receives a content-keyed
+subdirectory, preventing metrics from a changed target profile from reusing an
+older interval list.
+
+A source checkout finds the bundled Twist BED automatically. Override it for a
+different covered-target file:
+
+.. code-block:: bash
+
+   cftk --config cftk_init.json process -s 3 --target-bed /path/to/targets.bed
+
+Installed distributions do not include repository ``data/``. Installed users
+must pass ``--target-bed``. For a non-targeted workflow, disable both Picard
+collections explicitly with ``--skip-picard-metrics``.
 
 Parallel Samples
 ----------------

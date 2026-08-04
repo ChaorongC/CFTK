@@ -15,7 +15,8 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``1_process/2_alignment/``
      - Aligned BAM files and alignment metrics.
    * - ``1_process/3_markdup/``
-     - Duplicate-marked BAM files and indexes.
+     - Duplicate-marked BAM files, indexes, and ``picard_metrics/`` target and
+       alignment performance outputs.
    * - ``1_process/4_methylation/``
      - Per-sample CpG methylation calls.
    * - ``1_process/5_merged_matrix/``

@@ -67,7 +67,15 @@ Run CFTK
 .. code-block:: bash
 
    cftk --help
-   cftk --config cftk_init.json init
+   mkdir example_study
+   cd example_study
+   cftk init
+
+The guided initializer creates compact project metadata and uses one local
+reference root. It tries ``bwameth index`` first and ``bwameth.py index`` if
+that fails, then prepares ``.fai`` and Picard ``.dict`` companions. Managed
+reference download is not enabled until an immutable registry is available.
+Use ``--skip-reference-prep`` only when those files are managed outside CFTK.
 
 Direct source execution remains supported:
 
@@ -111,6 +119,7 @@ Many workflows call command-line tools that Python packaging does not install:
 - ``trim_galore``
 - ``bwameth``
 - ``sambamba``, ``samtools``
+- Picard (the ``picard`` executable)
 - ``MethylDackel``
 - ``bedtools``
 - ``multiqc``

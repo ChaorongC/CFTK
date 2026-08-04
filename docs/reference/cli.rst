@@ -15,18 +15,30 @@ Commands
 --------
 
 ``init``
-   Validate ``cftk_init.json`` and print a project summary.
+   Create a missing schema-v2 project interactively, or validate an existing
+   schema-v2/legacy config and prepare bwa-meth, samtools, and Picard reference
+   companions.
 
    .. code-block:: bash
 
-      cftk --config cftk_init.json init
+      cftk init
+
+   For batch setup, pass ``--non-interactive``, ``--sample-sheet PATH``, and
+   ``--reference-root PATH``. ``--profile`` and ``--profile-version`` select a
+   local version. ``--reference-mode managed`` is reserved but currently
+   disabled. Pass ``--skip-reference-prep`` for validation only.
 
 ``process``
-   Run raw processing steps 1 through 4.
+   Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's
+   covered-target BED for Picard metrics, with a bundled source-checkout
+   fallback for legacy configs.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json process -s 1 2 3 4
+
+   Use ``--target-bed PATH`` to override the covered targets, or
+   ``--skip-picard-metrics`` for a workflow that does not need them.
 
 ``qc``
    Run QC steps 1 through 3.

@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "project_name": "example_study",
+  "output_dir": ".",
+  "assay": "twist_human_methylome",
+  "genome": "hg38",
+  "samples": "samples.tsv",
+  "reference_mode": "local",
+  "reference_root": "/shared/references/cftk",
+  "reference_profile": {
+    "id": "twist_human_methylome_hg38",
+    "version": "1.0.0"
+  },
+  "process": {
+    "cores": 20,
+    "parallel_samples": 1,
+    "min_depth": 10
+  }
+}

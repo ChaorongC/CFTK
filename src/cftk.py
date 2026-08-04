@@ -66,8 +66,6 @@ def _cmd_qc(args):
     args.output_dir   = paths["qc"]
     args.matrices_dir = paths["cpg_matrix"]
     args.ref_fa       = _p(cfg, "reference_data", "genome_fa", default="")
-    args.clip_r1      = qc_p.get("clip_r1",   0)
-    args.clip_r2      = qc_p.get("clip_r2",   0)
     args.fragment     = qc_p.get("fragment",  167)
     args.step_size    = qc_p.get("step_size", 2000)
     args.cores        = _p(cfg, "process", "step4_methylation", "params", "cores", default=1)
@@ -336,15 +334,23 @@ def _make_label(cfg, paths):
     from util import disp
     ga, gb = cfg["comparison"].split("_vs_", 1)
 
-    _disease_kw = ("als", "cancer", "disease", "tumor", "case", "patient",
-                   "mut", "ad", "pd", "ms", "hd", "treatment", "case")
-    ga_is_disease = any(kw in ga.lower() for kw in _disease_kw)
-    gb_is_disease = any(kw in gb.lower() for kw in _disease_kw)
-
-    if ga_is_disease and not gb_is_disease:
-        label_a, label_b = 1, 0
-    else:
+    group_roles = cfg.get("group_roles", {})
+    if group_roles:
+        if group_roles.get(ga) != "control" or group_roles.get(gb) != "case":
+            sys.exit(
+                "[label] ERROR: comparison order must be control_vs_case when "
+                "explicit group_roles are provided."
+            )
         label_a, label_b = 0, 1
+    else:
+        _disease_kw = ("als", "cancer", "disease", "tumor", "case", "patient",
+                       "mut", "ad", "pd", "ms", "hd", "treatment", "case")
+        ga_is_disease = any(kw in ga.lower() for kw in _disease_kw)
+        gb_is_disease = any(kw in gb.lower() for kw in _disease_kw)
+        if ga_is_disease and not gb_is_disease:
+            label_a, label_b = 1, 0
+        else:
+            label_a, label_b = 0, 1
 
     rows = [(s["name"], label_a) for s in cfg["samples"].get(ga, [])] + \
            [(s["name"], label_b) for s in cfg["samples"].get(gb, [])]
@@ -420,8 +426,6 @@ def _cmd_vis(args):
         qc_p = _p(cfg, "analysis", "qc", "params", default={})
         args.output_dir   = paths["qc"]
         args.matrices_dir = paths["cpg_matrix"]
-        args.clip_r1      = qc_p.get("clip_r1",  0)
-        args.clip_r2      = qc_p.get("clip_r2",  0)
         args.group_labels = group_labels
         qc_step = getattr(args, "step", None)
         if isinstance(qc_step, int):
@@ -511,6 +515,10 @@ def _cmd_run_all(args):
     all_samples = [s["name"] for g in cfg["samples"].values() for s in g]
 
     def _done_process():
+        # Re-enter process checkpoints so new or target-specific Picard metrics
+        # are backfilled even when BAM and CpG outputs predate this integration.
+        if not getattr(args, "skip_picard_metrics", False):
+            return False
         cpg = os.path.join(paths["cpg_matrix"], "cpg_matrix.tsv")
         if not os.path.exists(cpg):
             return False
@@ -652,9 +660,31 @@ def build_parser():
 
     # init
     p = sub.add_parser("init",
-        help="Validate cftk_init.json and print project summary.")
-    p.add_argument("--ref-index", dest="ref_index", action="store_true")
-    p.add_argument("--ref-dict",  dest="ref_dict",  action="store_true")
+        help="Create or validate a project and prepare its reference genome.")
+    p.add_argument(
+        "--non-interactive", action="store_true",
+        help="Create a missing config without prompts; requires explicit inputs.",
+    )
+    p.add_argument("--sample-sheet", default=None, metavar="PATH")
+    p.add_argument("--reference-root", default=None, metavar="PATH")
+    p.add_argument(
+        "--reference-mode", choices=("local", "managed"), default=None,
+        help="Reference mode for a new project; managed is not yet available.",
+    )
+    p.add_argument("--profile", default=None, metavar="ID")
+    p.add_argument("--profile-version", default=None, metavar="VERSION")
+    p.add_argument("--project-name", default=None, metavar="NAME")
+    p.add_argument("--output-dir", default=None, metavar="PATH")
+    p.add_argument("--assay", default="twist_human_methylome")
+    p.add_argument("--genome", default="hg38")
+    p.add_argument(
+        "--skip-reference-prep", action="store_true",
+        help="Validate the config without building bwa-meth, FASTA, or Picard indexes.",
+    )
+    p.add_argument("--ref-index", dest="ref_index", action="store_true",
+                   help=argparse.SUPPRESS)
+    p.add_argument("--ref-dict",  dest="ref_dict",  action="store_true",
+                   help=argparse.SUPPRESS)
     p.set_defaults(func=_cmd_init)
 
     # process
@@ -667,6 +697,14 @@ def build_parser():
     p.add_argument("-s", "--step", dest="step", type=int, nargs="+",
                    required=True, choices=range(1, 5), metavar="{1,2,3,4}")
     p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--target-bed", default=None, metavar="PATH",
+        help="Covered-target BED override for Picard metrics.",
+    )
+    p.add_argument(
+        "--skip-picard-metrics", action="store_true",
+        help="Skip CollectHsMetrics and CollectMultipleMetrics after markdup.",
+    )
     p.set_defaults(func=_cmd_process)
 
     # qc — M2: step range extended to 0-3
@@ -746,6 +784,8 @@ def build_parser():
     p = sub.add_parser("run-all",
         help="Run full pipeline end-to-end.")
     p.add_argument("--parallel",   type=int, default=None)
+    p.add_argument("--target-bed", default=None, metavar="PATH")
+    p.add_argument("--skip-picard-metrics", action="store_true")
     p.add_argument("-p", "--performance", dest="performance", action="store_true")
     p.add_argument("--mesa-model", dest="mesa_model", action="store_true")
     p.add_argument("--loocv",      dest="loocv",      action="store_true")

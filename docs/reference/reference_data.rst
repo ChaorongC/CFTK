@@ -4,6 +4,44 @@ Reference Data
 CFTK needs both repository-hosted region resources and user-supplied genome
 resources. Repository reference files are not installed in Python artifacts.
 
+Versioned Processing Profiles
+-----------------------------
+
+Schema-v2 projects expose one ``reference_root`` rather than individual paths.
+Each local profile has this layout:
+
+.. code-block:: text
+
+   <reference_root>/
+   `-- twist_human_methylome_hg38/
+       `-- 1.0.0/
+           |-- manifest.json
+           |-- genome/
+           |   |-- hg38.fa
+           |   |-- hg38.2bit
+           |   `-- hg38.chrom.sizes
+           `-- assay/
+               `-- covered_targets.bed
+
+The manifest is illustrated by
+``examples/reference-profile-manifest.json``. Required components are
+``genome_fa``, ``genome_2bit``, ``chrom_sizes``, and ``target_bed``. Additional
+workflow-specific components such as ``tss_pas_bed``, ``ctcf_bed``,
+``blacklist``, ``gap``, ``bins``, and ``cpg_std`` may be declared in the same
+``components`` object and are exposed to downstream commands when present.
+
+Component paths must remain inside the version directory. Optional manifest
+``sha256`` values are checked during initialization; CFTK computes every
+component hash for ``cftk.lock.json`` even when the local manifest omits it.
+Target BED intervals must be valid 0-based half-open BED coordinates on contigs
+present in ``chrom_sizes`` and must not exceed chromosome lengths.
+
+Root resolution is ``CFTK_REFERENCE_ROOT``, the project JSON hint, then
+``~/.cache/cftk/references``. The environment override is intended for moving
+a project between machines. Managed mode is not enabled because the repository
+does not yet publish an immutable checksummed profile registry; CFTK will fail
+instead of downloading mutable assets.
+
 Repository Files
 ----------------
 
@@ -74,6 +112,11 @@ array directory, and the calculator arrays are not consumed by ``cftk power``.
 The example config still uses placeholder paths. Replace the placeholders with
 paths that are valid in your environment.
 
+Schema-v2 processing resolves the covered-target BED from its profile for
+Picard ``CollectHsMetrics``. Legacy source checkouts retain the bundled
+fallback. ``process --target-bed PATH`` is an expert one-run override, and
+``--skip-picard-metrics`` explicitly disables these metrics.
+
 User-Supplied Files
 -------------------
 
@@ -87,6 +130,12 @@ Most full workflows require additional references:
 - ``bins``: genomic bins for DELFI-style features.
 - ``cpg_std``: pickled CpG standard-deviation table used only by the legacy
   ``cftk power`` workflow.
+
+Running ``cftk init`` prepares bwa-meth converted indexes, ``genome_fa.fai``,
+and a conventional sequence dictionary beside the FASTA (for example,
+``hg38.dict`` for ``hg38.fa``). Existing complete files are reused. CFTK
+requires the generated or existing ``.fai`` contigs and lengths to exactly
+match the profile chromosome sizes.
 
 Coordinate Safety
 -----------------
