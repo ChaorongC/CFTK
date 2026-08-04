@@ -36,9 +36,12 @@ docs/_build/html/index.html
 
 ## Quick Start
 
-Install the Python package from the checkout:
+Create the pinned core-processing environment and install CFTK from the
+checkout:
 
 ```bash
+mamba env create -f environment.yml
+mamba activate cftk
 python -m pip install .
 ```
 
@@ -85,6 +88,17 @@ Inspect available commands:
 cftk --help
 ```
 
+Before processing, run the read-only readiness check:
+
+```bash
+cftk doctor
+```
+
+`doctor` verifies the selected tools, full reference hashes and companions,
+project lock, inputs, and output location. It does not download, index, repair,
+or modify source data. A `FAIL` exits with status 1; `WARN` alone exits with
+status 0. Use `cftk doctor --json` for schedulers or CI.
+
 Run raw processing after initialization:
 
 ```bash
@@ -100,9 +114,9 @@ are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-`cftk doctor`, a fail-safe beginner `cftk run`, and real-data end-to-end
-validation remain explicit release TODOs. Their prerequisites and completion
-criteria are tracked in [TODO.md](TODO.md).
+A fail-safe beginner `cftk run` and complete real-data end-to-end validation
+remain explicit release TODOs. Their prerequisites and completion criteria are
+tracked in [TODO.md](TODO.md).
 
 ## Model-Power Calculator
 

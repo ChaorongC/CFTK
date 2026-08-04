@@ -15,19 +15,19 @@ Clone The Repository
 Create An Environment
 ---------------------
 
-Use a Python environment that matches the target platform for your analysis.
-The project metadata currently declares Python 3.9 or newer.
+The repository includes an environment that pins the core processing
+executables and Java runtime used for validation. Install Mamba or Conda, then
+create it from the repository root:
 
 .. code-block:: bash
 
-   python -m venv .venv
-   source .venv/bin/activate
-   python -m pip install --upgrade pip
+   mamba env create -f environment.yml
+   mamba activate cftk
 
-Install Python dependencies according to the workflows you plan to run. The
-core analysis modules use packages such as ``numpy``, ``pandas``, ``scipy``,
-``scikit-learn``, ``matplotlib``, ``seaborn``, ``pysam``, ``pyBigWig``,
-``bx-python``, ``statsmodels``, ``xgboost``, and ``finaletoolkit``.
+The environment pins Python, Java, Trim Galore, FastQC, bwa-meth, BWA,
+Sambamba, samtools, Picard, MethylDackel, BEDTools, and MultiQC. It is a
+portable environment specification, not a byte-for-byte solver lock. Record an
+explicit platform lock or export for a production analysis.
 
 Install CFTK
 ------------
@@ -70,6 +70,7 @@ Run CFTK
    mkdir example_study
    cd example_study
    cftk init
+   cftk doctor
 
 The guided initializer creates compact project metadata and installs the pinned
 managed default profile. Acquisition peaks at approximately 5.7 GB before
@@ -77,6 +78,29 @@ temporary download artifacts are removed; bwa-meth indexing requires additional
 space. CFTK tries ``bwameth index`` first and ``bwameth.py index`` if that fails,
 then prepares ``.fai`` and Picard ``.dict`` companions. Use
 ``--skip-reference-prep`` only when those files are managed outside CFTK.
+
+``cftk doctor`` is read-only apart from an ephemeral output-location write
+probe. It verifies the selected process tools, full profile checksums, reference
+companions, project lock, FASTQ/BAM inputs, BAM/reference sequence dictionaries,
+and output capacity. It never downloads references, creates indexes, repairs
+files, or changes source data. Full checksum verification reads several
+gigabytes and can take a few minutes on shared storage.
+
+For a downstream BAM-only project, check only methylation-calling readiness:
+
+.. code-block:: bash
+
+   cftk doctor --step 4
+
+Machine-readable output is available for schedulers:
+
+.. code-block:: bash
+
+   cftk doctor --json > doctor.json
+
+The command exits 0 when there are no required failures, including reports
+that contain only optional warnings. It exits 1 for readiness failures;
+argument errors retain argparse exit status 2.
 
 Direct source execution remains supported:
 
@@ -130,8 +154,9 @@ Many workflows call command-line tools that Python packaging does not install:
 - R packages used by DMR annotation, including ``annotatr`` and hg38 annotation
   packages
 
-Install and validate these tools separately in the compute environment where
-the pipeline will run.
+The pinned environment installs the core step 1-4 tools. Install advanced
+workflow tools separately in the compute environment where those workflows
+will run.
 
 Build The Documentation
 -----------------------

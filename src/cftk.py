@@ -43,6 +43,18 @@ def _cmd_init(args):
     init(args)
 
 
+def _cmd_doctor(args):
+    import json
+    from doctor import render_human, run_doctor
+
+    report = run_doctor(args)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(render_human(report))
+    raise SystemExit(report["exit_code"])
+
+
 def _cmd_process(args):
     from process import process
     process(args, config_path=args.config)
@@ -686,6 +698,31 @@ def build_parser():
     p.add_argument("--ref-dict",  dest="ref_dict",  action="store_true",
                    help=argparse.SUPPRESS)
     p.set_defaults(func=_cmd_init)
+
+    # doctor
+    p = sub.add_parser(
+        "doctor",
+        help="Check process readiness without downloading, repairing, or running data.",
+    )
+    p.add_argument(
+        "-s", "--step", dest="step", type=int, nargs="+",
+        choices=range(1, 5), default=[1, 2, 3, 4],
+        metavar="{1,2,3,4}",
+        help="Process steps to check (default: 1 2 3 4).",
+    )
+    p.add_argument(
+        "--target-bed", default=None, metavar="PATH",
+        help="Covered-target BED override to validate for Picard metrics.",
+    )
+    p.add_argument(
+        "--skip-picard-metrics", action="store_true",
+        help="Do not require Picard target/alignment metrics readiness.",
+    )
+    p.add_argument(
+        "--json", action="store_true",
+        help="Write a machine-readable JSON report to stdout.",
+    )
+    p.set_defaults(func=_cmd_doctor)
 
     # process
     p = sub.add_parser("process",

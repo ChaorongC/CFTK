@@ -21,6 +21,17 @@ CFTK selects managed mode automatically and installs the pinned
 ``CFTK_REFERENCE_ROOT`` or ``~/.cache/cftk/references``. Individual reference
 paths are not added to the project JSON.
 
+Before starting the workflow, run:
+
+.. code-block:: bash
+
+   cftk doctor
+
+Resolve every ``FAIL`` before processing. ``WARN`` identifies optional tooling
+or provenance that deserves review but does not prevent execution. The check
+does not repair the project; rerun ``cftk init`` when its remedy requests
+reference preparation or lock regeneration.
+
 2. Inspect The Compact Files
 ----------------------------
 
@@ -45,6 +56,7 @@ machine-specific reference paths.
 The major commands are:
 
 - ``init``: validate the config and prepare the reference genome.
+- ``doctor``: check selected processing readiness without changing the project.
 - ``process``: run raw processing steps 1 through 4.
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
@@ -60,7 +72,7 @@ The major commands are:
 4. Run Rawdata Processing
 -------------------------
 
-After initialization:
+After initialization and a passing doctor report:
 
 .. code-block:: bash
 
