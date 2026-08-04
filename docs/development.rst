@@ -10,8 +10,6 @@ Planned Release Work
 The repository ``TODO.md`` is the authoritative roadmap. The current release
 gates are:
 
-- an immutable, licensed, checksummed registry before managed reference
-  acquisition is enabled;
 - a ``cftk doctor`` command after the reference and tool contracts stabilize;
 - explicit fail-fast, resume, and provenance semantics before adding a beginner
   ``cftk run`` command; and
@@ -19,5 +17,6 @@ gates are:
   bioinformatics toolchain before a production release is tagged.
 
 These items are deliberately reported as unsupported until their documented
-completion criteria are satisfied. Local reference profiles, schema-v2 project
-initialization, and legacy configuration compatibility are available now.
+completion criteria are satisfied. The pinned managed default profile, local
+reference profiles, schema-v2 project initialization, and legacy configuration
+compatibility are available now.

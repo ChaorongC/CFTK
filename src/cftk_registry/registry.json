@@ -1,0 +1,104 @@
+{
+  "registry_version": 1,
+  "profiles": {
+    "twist_human_methylome_hg38": {
+      "1.0.0": {
+        "profile_id": "twist_human_methylome_hg38",
+        "version": "1.0.0",
+        "assay": "twist_human_methylome",
+        "genome": "hg38",
+        "components": {
+          "genome_fa": {
+            "path": "genome/hg38_no_alt_analysis_set.fa",
+            "size": 3144230986,
+            "sha256": "9cce8b926416dd96b152deea85188495b75f7ac8d634cc723a017067be8702b7",
+            "artifact": {
+              "urls": [
+                "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz"
+              ],
+              "size": 872949833,
+              "sha256": "fb4243ebb014caf27111f24dd62b7ce42160f28581da6f8fcd6cba5977778d02",
+              "compression": "gzip",
+              "immutable": true
+            },
+            "license": {
+              "name": "NCBI Molecular Data Usage Policy",
+              "url": "https://www.ncbi.nlm.nih.gov/home/about/policies/#data"
+            },
+            "source": {
+              "name": "NCBI GRCh38 no-alt analysis set with UCSC IDs (GCA_000001405.15)",
+              "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/README_analysis_sets.txt"
+            }
+          },
+          "genome_2bit": {
+            "path": "genome/hg38_no_alt_analysis_set.2bit",
+            "size": 806959294,
+            "sha256": "5fd6db4a62d95a398098321c7ef9284217bffa0f0db54efbe701a26444493d89",
+            "artifact": {
+              "urls": [
+                "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/analysisSet/hg38.analysisSet.2bit"
+              ],
+              "size": 806959294,
+              "sha256": "5fd6db4a62d95a398098321c7ef9284217bffa0f0db54efbe701a26444493d89",
+              "compression": "none",
+              "immutable": true
+            },
+            "license": {
+              "name": "UCSC Genome Browser data-use terms",
+              "url": "https://genome.ucsc.edu/license/"
+            },
+            "source": {
+              "name": "UCSC hg38 analysis set",
+              "url": "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/analysisSet/"
+            }
+          },
+          "chrom_sizes": {
+            "path": "genome/hg38_no_alt_analysis_set.chrom.sizes",
+            "size": 4500,
+            "sha256": "8502b755744bd2d708d866bf3e68a58c7bd9369c737e922ba32d7fea4aedaf51",
+            "artifact": {
+              "urls": [
+                "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.fai"
+              ],
+              "size": 7804,
+              "sha256": "502a1b8fb73ccd53285c28a0f12df90c818b4fe3de1e862ef47c593ef1a0a4b4",
+              "compression": "none",
+              "transform": "fai_to_chrom_sizes",
+              "immutable": true
+            },
+            "license": {
+              "name": "NCBI Molecular Data Usage Policy",
+              "url": "https://www.ncbi.nlm.nih.gov/home/about/policies/#data"
+            },
+            "source": {
+              "name": "NCBI GRCh38 no-alt analysis-set FASTA index",
+              "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.fai"
+            }
+          },
+          "target_bed": {
+            "path": "assay/twist_human_methylome_hg38_covered_targets.bed",
+            "size": 34398657,
+            "sha256": "82f54b6e17d92c98e07e9204cddeffad9bd4b7882e925e123954013b33b65398",
+            "artifact": {
+              "urls": [
+                "https://raw.githubusercontent.com/ChaorongC/CFTK/3cea475/data/covered_targets_Twist_Methylome_hg38_annotated_collapsed.bed"
+              ],
+              "size": 34398657,
+              "sha256": "82f54b6e17d92c98e07e9204cddeffad9bd4b7882e925e123954013b33b65398",
+              "compression": "none",
+              "immutable": true
+            },
+            "license": {
+              "name": "CFTK maintainer-authorized distribution",
+              "url": "https://github.com/ChaorongC/CFTK/blob/3cea475/data/covered_targets_Twist_Methylome_hg38_annotated_collapsed.bed"
+            },
+            "source": {
+              "name": "CFTK Twist Human Methylome covered targets",
+              "url": "https://github.com/ChaorongC/CFTK/blob/3cea475/data/covered_targets_Twist_Methylome_hg38_annotated_collapsed.bed"
+            }
+          }
+        }
+      }
+    }
+  }
+}

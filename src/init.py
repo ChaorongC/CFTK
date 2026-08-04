@@ -14,6 +14,7 @@ from reference_profiles import (
     DEFAULT_PROFILE_ID,
     acquire_reference_profile,
     load_chrom_sizes,
+    managed_profile_available,
     sha256_file,
 )
 from util import disp
@@ -605,29 +606,37 @@ def _create_project_config(args):
 
     sample_sheet = getattr(args, "sample_sheet", None)
     reference_root = getattr(args, "reference_root", None)
-    if not interactive and (not sample_sheet or not reference_root):
+    profile_id = getattr(args, "profile", None) or DEFAULT_PROFILE_ID
+    reference_mode = getattr(args, "reference_mode", None)
+    if reference_mode is None:
+        reference_mode = (
+            "managed" if managed_profile_available(profile_id) else "local"
+        )
+    if not interactive and (
+        not sample_sheet or (reference_mode == "local" and not reference_root)
+    ):
         sys.exit(
-            "[init] ERROR: noninteractive creation requires --sample-sheet PATH "
-            "and --reference-root PATH."
+            "[init] ERROR: noninteractive creation requires --sample-sheet PATH; "
+            "local reference mode also requires --reference-root PATH."
         )
 
     project_name = getattr(args, "project_name", None) or config_path.parent.name
     output_dir = getattr(args, "output_dir", None) or "."
-    reference_mode = getattr(args, "reference_mode", None) or "local"
-    profile_id = getattr(args, "profile", None) or DEFAULT_PROFILE_ID
     profile_version = getattr(args, "profile_version", None)
+
+    if not reference_root:
+        reference_root = os.environ.get(
+            "CFTK_REFERENCE_ROOT",
+            str(Path.home() / ".cache" / "cftk" / "references"),
+        )
 
     if interactive:
         project_name = _prompt("Project name", project_name)
         output_dir = _prompt("Output directory", output_dir)
         default_sheet = sample_sheet or str(config_path.parent / "samples.tsv")
         sample_sheet = _prompt("Sample sheet", default_sheet)
-        if not reference_root:
-            default_root = os.environ.get(
-                "CFTK_REFERENCE_ROOT",
-                str(Path.home() / ".cache" / "cftk" / "references"),
-            )
-            reference_root = _prompt("Reference root", default_root)
+        if reference_mode == "local" and getattr(args, "reference_root", None) is None:
+            reference_root = _prompt("Reference root", reference_root)
 
     sample_sheet_path = Path(sample_sheet).expanduser()
     if not sample_sheet_path.is_absolute():
@@ -720,6 +729,20 @@ def write_lockfile(config_path, *, profile=None):
             "genome": profile["genome"],
             "manifest_sha256": profile["manifest_sha256"],
             "components": profile["component_hashes"],
+            "acquisition": {
+                "mode": profile.get("acquisition", {}).get(
+                    "mode", raw.get("reference_mode", "local")
+                ),
+                **(
+                    {
+                        "registry_entry_sha256": profile["acquisition"][
+                            "registry_entry_sha256"
+                        ]
+                    }
+                    if profile.get("acquisition", {}).get("registry_entry_sha256")
+                    else {}
+                ),
+            },
         },
     }
     lock_path = config_dir / "cftk.lock.json"

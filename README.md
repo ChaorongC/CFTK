@@ -50,26 +50,34 @@ cd example_study
 cftk init
 ```
 
-`cftk init` uses the current directory, discovers only unambiguous single-lane
-FASTQ pairs or BAMs, and asks for a local reference root. If it creates a
-`samples.tsv` template, fill in the explicit `group` and `role` columns and run
-`cftk init` again. Initialization validates the selected profile and writes a
-portable `cftk.lock.json`, then builds bwa-meth, samtools, and Picard reference
-companions. Managed reference downloads are reserved but not enabled until an
-immutable checksummed release registry is published.
+`cftk init` uses the current directory and discovers only unambiguous
+single-lane FASTQ pairs or BAMs. If it creates a `samples.tsv` template, fill in
+the explicit `group` and `role` columns and run `cftk init` again. Initialization
+validates the selected profile and writes a portable `cftk.lock.json`, then
+builds bwa-meth, samtools, and Picard reference companions.
+
+CFTK automatically installs the managed
+`twist_human_methylome_hg38` profile version `1.0.0` under
+`CFTK_REFERENCE_ROOT` or `~/.cache/cftk/references`. The profile pins an NCBI
+GRCh38 no-alt UCSC-ID FASTA and FASTA index, the matching UCSC analysis-set
+2bit genome, and the CFTK covered-target BED at an immutable Git commit.
 
 For batch setup, provide the required inputs explicitly:
 
 ```bash
 cftk init --non-interactive \
-  --sample-sheet samples.tsv \
-  --reference-root /shared/references/cftk
+  --sample-sheet samples.tsv
 ```
 
 Reference profiles live under
 `<reference-root>/<profile-id>/<version>/manifest.json`. Set
 `CFTK_REFERENCE_ROOT` to relocate a project without editing its JSON. See
 `examples/` for the compact config, sample sheet, and manifest formats.
+
+The managed downloader stages each
+profile, verifies download and installed-file sizes and SHA-256 hashes, validates
+profile compatibility, and publishes the version atomically. See the reference
+data documentation before using an external registry.
 
 Inspect available commands:
 
@@ -92,9 +100,9 @@ are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-Managed reference acquisition, `cftk doctor`, a fail-safe beginner `cftk run`,
-and real-data end-to-end validation remain explicit release TODOs. Their
-prerequisites and completion criteria are tracked in [TODO.md](TODO.md).
+`cftk doctor`, a fail-safe beginner `cftk run`, and real-data end-to-end
+validation remain explicit release TODOs. Their prerequisites and completion
+criteria are tracked in [TODO.md](TODO.md).
 
 ## Model-Power Calculator
 

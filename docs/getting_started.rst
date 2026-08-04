@@ -16,8 +16,10 @@ From the project directory, run:
 The guided setup uses current-directory defaults. It may create ``samples.tsv``
 from unambiguous FASTQ/BAM inputs and stop so you can assign explicit
 ``control`` and ``case`` roles. Rerun the same command after editing the sheet.
-You need a local profile under one reference root; managed download is not yet
-enabled.
+CFTK selects managed mode automatically and installs the pinned
+``twist_human_methylome_hg38`` profile version ``1.0.0`` under
+``CFTK_REFERENCE_ROOT`` or ``~/.cache/cftk/references``. Individual reference
+paths are not added to the project JSON.
 
 2. Inspect The Compact Files
 ----------------------------
