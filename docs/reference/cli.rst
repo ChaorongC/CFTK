@@ -23,10 +23,13 @@ Commands
 
       cftk init
 
-   For batch setup, pass ``--non-interactive``, ``--sample-sheet PATH``, and
-   ``--reference-root PATH``. ``--profile`` and ``--profile-version`` select a
-   local version. ``--reference-mode managed`` is reserved but currently
-   disabled. Pass ``--skip-reference-prep`` for validation only.
+   For managed batch setup, pass ``--non-interactive`` and
+   ``--sample-sheet PATH``. The default profile installs under
+   ``CFTK_REFERENCE_ROOT`` or ``~/.cache/cftk/references``. Local mode also
+   requires ``--reference-mode local --reference-root PATH``. ``--profile`` and
+   ``--profile-version`` select a non-default or ambiguous version. The expert
+   ``CFTK_REFERENCE_REGISTRY`` override remains available. Pass
+   ``--skip-reference-prep`` for validation only.
 
 ``process``
    Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's

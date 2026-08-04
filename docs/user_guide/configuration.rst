@@ -10,7 +10,8 @@ CFTK's beginner setup is a guided command run from the project directory:
    cftk init
 
 When ``cftk_init.json`` is absent and the terminal is interactive, CFTK asks
-for project settings and one reference root. If ``samples.tsv`` is absent, it
+for project settings and uses the managed default profile. If ``samples.tsv``
+is absent, it
 discovers only one unambiguous FASTQ R1/R2 pair or one BAM per sample, writes an
 editable template, and stops. Fill in the biological fields and rerun
 ``cftk init``. CFTK never guesses control and case roles.
@@ -69,17 +70,31 @@ layouts explicitly after combining lanes upstream.
 Noninteractive Setup
 --------------------
 
-Batch and HPC setup must identify the sample sheet and reference root:
+Batch and HPC setup with the managed default requires only the sample sheet:
 
 .. code-block:: bash
 
    cftk init --non-interactive \
      --sample-sheet samples.tsv \
-     --reference-root /shared/references/cftk \
      --project-name example_study
 
-The default profile is selected automatically. Use ``--profile`` and
-``--profile-version`` only for a non-default or version-ambiguous local root.
+The default managed profile and version are selected automatically. Set
+``CFTK_REFERENCE_ROOT`` to use a shared cluster cache.
+
+For an offline or institution-managed local profile, select local mode and one
+root explicitly:
+
+.. code-block:: bash
+
+   cftk init --non-interactive \
+     --sample-sheet samples.tsv \
+     --reference-mode local \
+     --reference-root /shared/references/cftk
+
+Use ``--profile`` and ``--profile-version`` only for a non-default or
+version-ambiguous local root. An expert testing a reviewed private registry may
+set ``CFTK_REFERENCE_REGISTRY`` to its JSON path; this does not relax registry
+validation or artifact verification.
 
 CFTK refuses to overwrite an existing config or sample sheet. Pass
 ``--skip-reference-prep`` only for validation when bwa-meth, ``.fai``, and
@@ -95,8 +110,9 @@ is ``CFTK_REFERENCE_ROOT``, then ``reference_root`` in JSON, then
 and cluster without rewriting individual paths.
 
 Initialization writes ``cftk.lock.json`` atomically. It records the project
-config hash, sample-sheet hash, profile ID/version, manifest hash, and every
-component hash, but no reference-root path. Regenerate the lock with
+config hash, sample-sheet hash, profile ID/version, manifest hash, every
+component hash, and managed registry-entry hash when applicable, but no
+reference-root path. Regenerate the lock with
 ``cftk init`` after an intentional config, sample, or profile change.
 
 Legacy Configuration

@@ -669,7 +669,7 @@ def build_parser():
     p.add_argument("--reference-root", default=None, metavar="PATH")
     p.add_argument(
         "--reference-mode", choices=("local", "managed"), default=None,
-        help="Reference mode for a new project; managed is not yet available.",
+        help="Reference mode for a new project (default: managed).",
     )
     p.add_argument("--profile", default=None, metavar="ID")
     p.add_argument("--profile-version", default=None, metavar="VERSION")

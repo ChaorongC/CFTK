@@ -1,12 +1,27 @@
-"""Versioned reference-profile discovery and validation for CFTK."""
+"""Versioned reference-profile discovery, validation, and acquisition."""
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
+import threading
+from contextlib import contextmanager
+from importlib import resources
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Unix HPC systems provide fcntl.
+    fcntl = None
 
 
 DEFAULT_PROFILE_ID = "twist_human_methylome_hg38"
@@ -20,6 +35,10 @@ REQUIRED_COMPONENTS = {
 }
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
+_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
+_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+_DOWNLOAD_ATTEMPTS = 2
 
 
 def sha256_file(path):
@@ -38,6 +57,443 @@ def _safe_identifier(value, label):
             "digits, dot, underscore, or hyphen."
         )
     return value
+
+
+def _registry_error(message):
+    sys.exit(f"[references] ERROR: invalid managed registry: {message}")
+
+
+def _read_registry(registry=None):
+    if registry is None:
+        override = os.environ.get("CFTK_REFERENCE_REGISTRY")
+        if override:
+            registry = Path(override).expanduser()
+        else:
+            try:
+                text = resources.files("cftk_registry").joinpath("registry.json").read_text()
+                registry = json.loads(text)
+            except (OSError, json.JSONDecodeError, ModuleNotFoundError) as exc:
+                sys.exit(f"[references] ERROR: could not load packaged registry: {exc}")
+    if isinstance(registry, (str, os.PathLike)):
+        registry_path = Path(registry).expanduser().resolve()
+        try:
+            registry = json.loads(registry_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            sys.exit(f"[references] ERROR: could not load registry {registry_path}: {exc}")
+    if not isinstance(registry, dict):
+        _registry_error("the registry must be a JSON object.")
+    return registry
+
+
+def _validate_metadata(value, component, field):
+    if not isinstance(value, dict):
+        _registry_error(f"component '{component}' requires {field} metadata.")
+    for key in ("name", "url"):
+        if not isinstance(value.get(key), str) or not value[key].strip():
+            _registry_error(
+                f"component '{component}' {field}.{key} must be a nonempty string."
+            )
+    parsed = urlsplit(value["url"])
+    if parsed.scheme != "https" or not parsed.netloc:
+        _registry_error(
+            f"component '{component}' {field}.url must be an HTTPS URL."
+        )
+
+
+def _validate_artifact_url(url, component):
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        _registry_error(
+            f"component '{component}' artifact requires an immutable HTTPS URL."
+        )
+
+
+def _validate_size(value, component, field):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        _registry_error(f"component '{component}' {field} must be a positive integer.")
+
+
+def _validate_hash(value, component, field):
+    if not isinstance(value, str) or not _SHA256.fullmatch(value):
+        _registry_error(f"component '{component}' {field} must be a SHA-256 value.")
+
+
+def _validate_component_path(value, component):
+    if not isinstance(value, str) or not value:
+        _registry_error(f"component '{component}' path must be a relative path.")
+    path = Path(value)
+    if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+        _registry_error(f"component '{component}' path must be a safe relative path.")
+
+
+def validate_reference_registry(registry=None):
+    """Validate and return an immutable managed-reference registry."""
+    registry = _read_registry(registry)
+    if registry.get("registry_version") != 1:
+        _registry_error("registry_version must be 1.")
+    profiles = registry.get("profiles")
+    if not isinstance(profiles, dict):
+        _registry_error("profiles must be an object.")
+
+    for profile_id, versions in profiles.items():
+        _safe_identifier(profile_id, "registry profile id")
+        if not isinstance(versions, dict) or not versions:
+            _registry_error(f"profile '{profile_id}' must contain at least one version.")
+        for version, profile in versions.items():
+            _safe_identifier(version, "registry profile version")
+            if not isinstance(profile, dict):
+                _registry_error(f"profile '{profile_id}' version '{version}' must be an object.")
+            expected = {"profile_id": profile_id, "version": version}
+            for key, value in expected.items():
+                if profile.get(key) != value:
+                    _registry_error(
+                        f"profile '{profile_id}' version '{version}' {key} must be {value!r}."
+                    )
+            for key in ("assay", "genome"):
+                if not isinstance(profile.get(key), str) or not profile[key]:
+                    _registry_error(
+                        f"profile '{profile_id}' version '{version}' requires {key}."
+                    )
+            components = profile.get("components")
+            if not isinstance(components, dict):
+                _registry_error(
+                    f"profile '{profile_id}' version '{version}' components must be an object."
+                )
+            missing = sorted(REQUIRED_COMPONENTS - components.keys())
+            if missing:
+                _registry_error(
+                    f"profile '{profile_id}' version '{version}' is missing components: {missing}."
+                )
+            seen_paths = set()
+            for name, component in components.items():
+                _safe_identifier(name, "registry component name")
+                if not isinstance(component, dict):
+                    _registry_error(f"component '{name}' must be an object.")
+                _validate_component_path(component.get("path"), name)
+                if component["path"] in seen_paths:
+                    _registry_error(f"component '{name}' reuses path {component['path']!r}.")
+                seen_paths.add(component["path"])
+                _validate_size(component.get("size"), name, "size")
+                _validate_hash(component.get("sha256"), name, "sha256")
+                _validate_metadata(component.get("license"), name, "license")
+                _validate_metadata(component.get("source"), name, "source")
+                artifact = component.get("artifact")
+                if not isinstance(artifact, dict):
+                    _registry_error(f"component '{name}' requires artifact metadata.")
+                urls = artifact.get("urls")
+                if (
+                    artifact.get("immutable") is not True
+                    or not isinstance(urls, list)
+                    or not urls
+                    or any(not isinstance(url, str) for url in urls)
+                ):
+                    _registry_error(
+                        f"component '{name}' artifact requires immutable HTTPS URLs."
+                    )
+                for url in urls:
+                    _validate_artifact_url(url, name)
+                _validate_size(artifact.get("size"), name, "artifact.size")
+                _validate_hash(artifact.get("sha256"), name, "artifact.sha256")
+                compression = artifact.get("compression", "none")
+                if compression not in ("none", "gzip"):
+                    _registry_error(
+                        f"component '{name}' artifact.compression must be 'none' or 'gzip'."
+                    )
+                transform = artifact.get("transform", "none")
+                if transform not in ("none", "fai_to_chrom_sizes"):
+                    _registry_error(
+                        f"component '{name}' artifact.transform must be 'none' "
+                        "or 'fai_to_chrom_sizes'."
+                    )
+                if compression == "none" and transform == "none" and (
+                    artifact["size"] != component["size"]
+                    or artifact["sha256"].lower() != component["sha256"].lower()
+                ):
+                    _registry_error(
+                        f"component '{name}' uncompressed artifact and installed file metadata differ."
+                    )
+    return registry
+
+
+def _registry_entry(registry, profile_id, version):
+    profiles = registry["profiles"]
+    versions = profiles.get(profile_id)
+    if not versions:
+        sys.exit(
+            f"[references] ERROR: managed registry does not contain profile '{profile_id}'."
+        )
+    if version is None:
+        available = sorted(versions)
+        if len(available) != 1:
+            sys.exit(
+                f"[references] ERROR: managed profile '{profile_id}' has versions "
+                f"{available}; specify --profile-version."
+            )
+        version = available[0]
+    version = _safe_identifier(version, "profile version")
+    if version not in versions:
+        sys.exit(
+            f"[references] ERROR: managed registry does not contain profile "
+            f"'{profile_id}' version '{version}'."
+        )
+    return version, versions[version]
+
+
+def managed_profile_available(profile_id=DEFAULT_PROFILE_ID, *, registry=None):
+    """Return whether a validated registry contains the requested profile."""
+    registry = validate_reference_registry(registry)
+    return profile_id in registry["profiles"]
+
+
+def _canonical_sha256(value):
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+@contextmanager
+def _install_lock(lock_path):
+    lock_key = str(lock_path.resolve())
+    with _LOCKS_GUARD:
+        thread_lock = _LOCKS.setdefault(lock_key, threading.Lock())
+    with thread_lock:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+
+def _download_artifact(component_name, spec, destination, opener):
+    artifact = spec["artifact"]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    last_error = None
+    for url in artifact["urls"]:
+        for _ in range(_DOWNLOAD_ATTEMPTS):
+            part = destination.with_suffix(destination.suffix + ".part")
+            part.unlink(missing_ok=True)
+            try:
+                request = Request(url, headers={"User-Agent": "CFTK reference downloader/1"})
+                with opener(request, timeout=60) as response, part.open("wb") as handle:
+                    final_url = response.geturl() if hasattr(response, "geturl") else url
+                    _validate_artifact_url(final_url, component_name)
+                    digest = hashlib.sha256()
+                    size = 0
+                    while True:
+                        block = response.read(_DOWNLOAD_CHUNK_SIZE)
+                        if not block:
+                            break
+                        size += len(block)
+                        if size > artifact["size"]:
+                            sys.exit(
+                                f"[references] ERROR: download size mismatch for component "
+                                f"'{component_name}': received more than {artifact['size']} bytes."
+                            )
+                        digest.update(block)
+                        handle.write(block)
+                if size != artifact["size"]:
+                    sys.exit(
+                        f"[references] ERROR: download size mismatch for component "
+                        f"'{component_name}': expected {artifact['size']}, got {size}."
+                    )
+                if digest.hexdigest() != artifact["sha256"].lower():
+                    sys.exit(
+                        f"[references] ERROR: download checksum mismatch for component "
+                        f"'{component_name}'."
+                    )
+                os.replace(part, destination)
+                return
+            except (HTTPError, URLError, OSError) as exc:
+                last_error = exc
+                part.unlink(missing_ok=True)
+    sys.exit(
+        f"[references] ERROR: could not download component '{component_name}': "
+        f"{last_error}"
+    )
+
+
+def _materialize_component(component_name, spec, artifact_path, output_path):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    part = output_path.with_suffix(output_path.suffix + ".part")
+    part.unlink(missing_ok=True)
+    try:
+        if spec["artifact"].get("compression", "none") == "gzip":
+            source = gzip.open(artifact_path, "rb")
+        else:
+            source = artifact_path.open("rb")
+        digest = hashlib.sha256()
+        size = 0
+        with source, part.open("wb") as destination:
+            transform = spec["artifact"].get("transform", "none")
+            if transform == "fai_to_chrom_sizes":
+                blocks = _project_fai_to_chrom_sizes(source, component_name)
+            else:
+                blocks = iter(lambda: source.read(_DOWNLOAD_CHUNK_SIZE), b"")
+            for block in blocks:
+                size += len(block)
+                if size > spec["size"]:
+                    sys.exit(
+                        f"[references] ERROR: installed size mismatch for component "
+                        f"'{component_name}'."
+                    )
+                digest.update(block)
+                destination.write(block)
+        if size != spec["size"]:
+            sys.exit(
+                f"[references] ERROR: installed size mismatch for component "
+                f"'{component_name}': expected {spec['size']}, got {size}."
+            )
+        if digest.hexdigest() != spec["sha256"].lower():
+            sys.exit(
+                f"[references] ERROR: installed checksum mismatch for component "
+                f"'{component_name}'."
+            )
+        os.replace(part, output_path)
+    except (gzip.BadGzipFile, OSError) as exc:
+        part.unlink(missing_ok=True)
+        sys.exit(
+            f"[references] ERROR: could not materialize component '{component_name}': {exc}"
+        )
+
+
+def _project_fai_to_chrom_sizes(source, component_name):
+    for line_number, raw_line in enumerate(source, start=1):
+        fields = raw_line.rstrip(b"\r\n").split(b"\t")
+        if len(fields) < 2 or not fields[0] or not fields[1]:
+            sys.exit(
+                f"[references] ERROR: invalid FAI line {line_number} for "
+                f"component '{component_name}'."
+            )
+        try:
+            sequence_length = int(fields[1])
+        except ValueError:
+            sys.exit(
+                f"[references] ERROR: invalid FAI sequence length on line "
+                f"{line_number} for component '{component_name}'."
+            )
+        if sequence_length < 1:
+            sys.exit(
+                f"[references] ERROR: nonpositive FAI sequence length on line "
+                f"{line_number} for component '{component_name}'."
+            )
+        yield fields[0] + b"\t" + str(sequence_length).encode("ascii") + b"\n"
+
+
+def _managed_manifest(entry, registry_entry_sha256):
+    components = {}
+    for name, spec in entry["components"].items():
+        components[name] = {
+            "path": spec["path"],
+            "size": spec["size"],
+            "sha256": spec["sha256"].lower(),
+            "artifact": spec["artifact"],
+            "license": spec["license"],
+            "source": spec["source"],
+        }
+    return {
+        "manifest_version": 1,
+        "profile_id": entry["profile_id"],
+        "version": entry["version"],
+        "assay": entry["assay"],
+        "genome": entry["genome"],
+        "acquisition": {
+            "mode": "managed",
+            "registry_version": 1,
+            "registry_entry_sha256": registry_entry_sha256,
+        },
+        "components": components,
+    }
+
+
+def _acquire_managed_profile(
+    reference_root,
+    profile_id,
+    version,
+    *,
+    registry=None,
+    opener=None,
+    verify_checksums=False,
+    validate_compatibility=False,
+):
+    registry = validate_reference_registry(registry)
+    profile_id = _safe_identifier(profile_id, "profile id")
+    version, entry = _registry_entry(registry, profile_id, version)
+    entry_hash = _canonical_sha256(entry)
+    root = Path(reference_root).expanduser().resolve()
+    profile_root = root / profile_id
+    profile_dir = profile_root / version
+    lock_path = profile_root / f".{version}.install.lock"
+    root.mkdir(parents=True, exist_ok=True)
+    opener = opener or urlopen
+
+    with _install_lock(lock_path):
+        if profile_dir.exists():
+            try:
+                installed = load_reference_profile(
+                    root,
+                    profile_id,
+                    version,
+                    verify_checksums=verify_checksums,
+                    validate_compatibility=validate_compatibility,
+                )
+            except SystemExit as exc:
+                sys.exit(
+                    f"[references] ERROR: installed immutable profile '{profile_id}' "
+                    f"version '{version}' is invalid; refusing replacement. {exc}"
+                )
+            if installed.get("acquisition", {}).get("registry_entry_sha256") != entry_hash:
+                sys.exit(
+                    f"[references] ERROR: installed immutable profile '{profile_id}' "
+                    f"version '{version}' differs from the registry; refusing replacement."
+                )
+            return installed
+
+        stage_root = Path(tempfile.mkdtemp(prefix=".cftk-install-", dir=root))
+        stage_profile = stage_root / profile_id / version
+        downloads = stage_root / ".downloads"
+        try:
+            stage_profile.mkdir(parents=True)
+            downloads.mkdir()
+            for name, spec in entry["components"].items():
+                artifact_path = downloads / name
+                _download_artifact(name, spec, artifact_path, opener)
+                _materialize_component(
+                    name, spec, artifact_path, stage_profile / spec["path"]
+                )
+            manifest = _managed_manifest(entry, entry_hash)
+            (stage_profile / "manifest.json").write_text(
+                json.dumps(manifest, indent=2) + "\n"
+            )
+            load_reference_profile(
+                stage_root,
+                profile_id,
+                version,
+                verify_checksums=True,
+                validate_compatibility=True,
+            )
+            profile_root.mkdir(parents=True, exist_ok=True)
+            os.replace(stage_profile, profile_dir)
+        finally:
+            shutil.rmtree(stage_root, ignore_errors=True)
+
+        return load_reference_profile(
+            root,
+            profile_id,
+            version,
+            verify_checksums=verify_checksums,
+            validate_compatibility=validate_compatibility,
+        )
 
 
 def _resolve_version(reference_root, profile_id, version):
@@ -248,6 +704,7 @@ def load_reference_profile(
         "manifest_sha256": sha256_file(manifest_path),
         "components": components,
         "component_hashes": component_hashes,
+        "acquisition": manifest.get("acquisition", {"mode": "local"}),
     }
 
 
@@ -259,12 +716,19 @@ def acquire_reference_profile(
     version=None,
     verify_checksums=False,
     validate_compatibility=False,
+    registry=None,
+    opener=None,
 ):
-    """Resolve local profiles; reject managed mode until a pinned registry exists."""
+    """Resolve a local profile or atomically install one from a pinned registry."""
     if mode == "managed":
-        sys.exit(
-            "[references] ERROR: no immutable managed reference profile is "
-            "available yet. Use --reference-mode local with --reference-root."
+        return _acquire_managed_profile(
+            reference_root,
+            profile_id,
+            version,
+            registry=registry,
+            opener=opener,
+            verify_checksums=verify_checksums,
+            validate_compatibility=validate_compatibility,
         )
     if mode != "local":
         sys.exit("[references] ERROR: reference mode must be 'local' or 'managed'.")

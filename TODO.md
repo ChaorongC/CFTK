@@ -1,31 +1,32 @@
 # CFTK Roadmap
 
-The local schema-v2 initializer and Twist-aligned processing foundation are
-implemented. The following work is intentionally pending and must not be
-advertised as supported until its completion criteria are met.
+The local schema-v2 initializer, Twist-aligned processing foundation, and
+managed reference acquisition are implemented. Remaining sections must not be
+advertised as supported until their completion criteria are met.
 
 ## 1. Managed Reference Acquisition
 
-**Status:** TODO, blocked on an immutable reference registry.
+**Status:** COMPLETE. The pinned production profile and verified acquisition
+path are implemented.
 
-Why this is pending: CFTK does not yet publish immutable reference releases
-with licenses, checksums, and stable URLs. Downloading mutable branch files
-would make analyses irreproducible and could silently mix incompatible assets.
+The production profile uses accession-versioned NCBI/UCSC genome resources and
+the maintainer-authorized CFTK covered-target BED pinned to a Git commit.
 
 Implementation:
 
-- Define and version a registry schema containing profile ID, profile version,
+- [x] Define and version a registry schema containing profile ID, profile version,
   assay, genome build, component URLs, byte sizes, SHA-256 checksums, licenses,
   and source attribution.
-- Decide which CFTK-owned assets can be hosted in GitHub Releases and which
+- [x] Decide which CFTK-owned assets can be hosted in GitHub and which
   third-party genome assets must remain at authoritative sources.
-- Publish a checksummed Twist Human Methylome hg38 profile release.
-- Download into a staging directory, verify every component, validate BED and
+- [x] Confirm target-BED distribution authorization and reference identity, then
+  publish a checksummed Twist-compatible Human Methylome hg38 profile release.
+- [x] Download into a staging directory, verify every component, validate BED and
   chromosome compatibility, then atomically publish
   `<reference_root>/<profile>/<version>`.
-- Refuse mutable URLs, checksum mismatches, incomplete profiles, and accidental
-  replacement of an installed immutable version.
-- Add retry, interrupted-download, offline, concurrent-install, and corruption
+- [x] Refuse unapproved URL declarations, checksum mismatches, incomplete
+  profiles, and accidental replacement of an installed immutable version.
+- [x] Add retry, interrupted-download, offline, concurrent-install, and corruption
   tests without weakening the existing local-profile mode.
 
 Completion criteria:

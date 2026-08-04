@@ -38,9 +38,50 @@ present in ``chrom_sizes`` and must not exceed chromosome lengths.
 
 Root resolution is ``CFTK_REFERENCE_ROOT``, the project JSON hint, then
 ``~/.cache/cftk/references``. The environment override is intended for moving
-a project between machines. Managed mode is not enabled because the repository
-does not yet publish an immutable checksummed profile registry; CFTK will fail
-instead of downloading mutable assets.
+a project between machines.
+
+Managed Registry And Acquisition
+--------------------------------
+
+The packaged managed registry has schema version 1. Each profile is keyed by
+profile ID and version and records its assay, genome build, and all required
+components. Every component must declare:
+
+- a safe relative installed path, byte size, and SHA-256 checksum;
+- one or more HTTPS artifact URLs, artifact size and SHA-256 checksum,
+  compression type, and an explicit immutability assertion;
+- a license name and HTTPS URL; and
+- source attribution with a name and HTTPS URL.
+
+Downloads are written under a temporary directory on the reference-root
+filesystem. CFTK verifies the downloaded artifact, decompresses it when needed,
+verifies the installed file independently, checks target BED/chromosome
+compatibility, and atomically publishes the completed version. A stable install
+lock serializes concurrent processes. Repeated installation is idempotent;
+CFTK refuses to overwrite an installed version that is corrupt or differs from
+the current registry entry.
+
+The packaged registry publishes
+``twist_human_methylome_hg38`` version ``1.0.0``. It contains:
+
+- the NCBI ``GCA_000001405.15`` GRCh38 no-alt analysis-set FASTA with UCSC IDs;
+- a two-column chromosome-size file deterministically projected from NCBI's
+  companion FASTA index;
+- UCSC's sequence-matched ``hg38.analysisSet.2bit``; and
+- the Twist Human Methylome covered-target BED from CFTK commit ``3cea475``,
+  distributed with maintainer authorization.
+
+The NCBI FASTA, NCBI FASTA index, and UCSC 2bit resolve to the same ordered 195
+contigs. The BED raw URL is pinned to the Git commit and its bytes match the
+repository asset. CFTK records and verifies separate transport and installed
+SHA-256 values where gzip decompression or FASTA-index projection changes the
+byte stream. The profile is Twist-compatible; CFTK does not claim that its FASTA
+filename is a byte-identical copy of every vendor resource bundle.
+
+For controlled development, ``CFTK_REFERENCE_REGISTRY`` may point to an approved
+registry JSON file. The same schema, HTTPS, size, checksum, license,
+source, staging, and compatibility checks apply. This override is not a way to
+bypass data-use requirements.
 
 Repository Files
 ----------------

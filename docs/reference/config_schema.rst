@@ -23,8 +23,8 @@ Schema V2
    the selected profile manifest.
 
 ``reference_mode``
-   ``local`` is currently supported. ``managed`` is reserved and fails with an
-   actionable message until CFTK publishes an immutable registry.
+   ``local`` resolves an installed profile. ``managed`` acquires a profile from
+   the validated registry and is the default for new projects.
 
 ``reference_root``
    Root containing profile directories. ``CFTK_REFERENCE_ROOT`` overrides this

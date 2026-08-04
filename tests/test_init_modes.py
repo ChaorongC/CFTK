@@ -217,7 +217,9 @@ def test_noninteractive_init_creates_compact_config_and_portable_lock(
 
 def test_noninteractive_init_requires_explicit_inputs(init_module, tmp_path):
     with pytest.raises(SystemExit, match="--sample-sheet.*--reference-root"):
-        init_module.init(init_args(tmp_path / "cftk_init.json"))
+        init_module.init(init_args(
+            tmp_path / "cftk_init.json", reference_mode="local"
+        ))
 
 
 def test_interactive_missing_config_accepts_defaults(
@@ -231,7 +233,9 @@ def test_interactive_missing_config_accepts_defaults(
     monkeypatch.setattr(init_module.sys, "stdin", SimpleNamespace(isatty=lambda: True))
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
 
-    init_module.init(init_args(config_path, non_interactive=False))
+    init_module.init(init_args(
+        config_path, non_interactive=False, reference_mode="local"
+    ))
 
     compact = json.loads(config_path.read_text())
     assert compact["project_name"] == tmp_path.name

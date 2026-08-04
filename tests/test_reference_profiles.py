@@ -112,16 +112,39 @@ def test_profile_version_must_be_unambiguous(profiles_module, tmp_path):
         )
 
 
-def test_managed_mode_is_disabled_without_immutable_registry(
+def test_managed_mode_fails_when_builtin_registry_has_no_profile(
     profiles_module, tmp_path
 ):
-    with pytest.raises(SystemExit, match="immutable.*managed.*available"):
+    with pytest.raises(SystemExit, match="managed registry.*does not contain"):
         profiles_module.acquire_reference_profile(
             mode="managed",
             reference_root=tmp_path,
-            profile_id="twist_human_methylome_hg38",
+            profile_id="profile_that_does_not_exist",
             version="1.0.0",
         )
+
+
+def test_builtin_registry_contains_valid_default_profile(profiles_module):
+    registry = profiles_module.validate_reference_registry()
+
+    assert "twist_human_methylome_hg38" in registry["profiles"]
+    assert profiles_module.managed_profile_available()
+    profile = registry["profiles"]["twist_human_methylome_hg38"]["1.0.0"]
+    components = profile["components"]
+    assert components["genome_fa"]["artifact"]["size"] == 872949833
+    assert components["genome_fa"]["sha256"] == (
+        "9cce8b926416dd96b152deea85188495b75f7ac8d634cc723a017067be8702b7"
+    )
+    assert components["genome_2bit"]["sha256"] == (
+        "5fd6db4a62d95a398098321c7ef9284217bffa0f0db54efbe701a26444493d89"
+    )
+    assert components["chrom_sizes"]["artifact"]["transform"] == (
+        "fai_to_chrom_sizes"
+    )
+    assert components["target_bed"]["path"] == (
+        "assay/twist_human_methylome_hg38_covered_targets.bed"
+    )
+    assert "/3cea475/" in components["target_bed"]["artifact"]["urls"][0]
 
 
 @pytest.mark.parametrize(

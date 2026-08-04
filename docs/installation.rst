@@ -71,11 +71,12 @@ Run CFTK
    cd example_study
    cftk init
 
-The guided initializer creates compact project metadata and uses one local
-reference root. It tries ``bwameth index`` first and ``bwameth.py index`` if
-that fails, then prepares ``.fai`` and Picard ``.dict`` companions. Managed
-reference download is not enabled until an immutable registry is available.
-Use ``--skip-reference-prep`` only when those files are managed outside CFTK.
+The guided initializer creates compact project metadata and installs the pinned
+managed default profile. Acquisition peaks at approximately 5.7 GB before
+temporary download artifacts are removed; bwa-meth indexing requires additional
+space. CFTK tries ``bwameth index`` first and ``bwameth.py index`` if that fails,
+then prepares ``.fai`` and Picard ``.dict`` companions. Use
+``--skip-reference-prep`` only when those files are managed outside CFTK.
 
 Direct source execution remains supported:
 
