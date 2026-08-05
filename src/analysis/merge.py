@@ -25,6 +25,7 @@ import sys
 
 import pandas as pd
 
+from init import get_group_names
 from util import disp, recorded_run
 
 
@@ -157,7 +158,7 @@ def _validate_merge_cfg(modality, mod_cfg, cfg):
     """Validate a single modality block in the merge config."""
     errors = []
     valid_groups = list(cfg.get("samples", {}).keys())
-    ga, gb = cfg["comparison"].split("_vs_", 1)
+    ga, gb = get_group_names(cfg)
 
     groups = mod_cfg.get("groups", {})
     if set(groups.keys()) != {ga, gb}:
@@ -212,7 +213,7 @@ def run_merge(modality, cfg, paths):
             disp(f"  x {e}")
         sys.exit(1)
 
-    ga, gb = cfg["comparison"].split("_vs_", 1)
+    ga, gb = get_group_names(cfg)
     groups = mod_cfg["groups"]
 
     # flatten entries in group order (group_a first, group_b second)

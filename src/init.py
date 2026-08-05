@@ -179,15 +179,22 @@ def load_sample_sheet(sample_sheet, *, require_files=True):
         samples.setdefault(group, []).append(entry)
 
     for role, groups in role_groups.items():
-        if len(groups) != 1:
+        if len(groups) > 1:
             sys.exit(
                 f"[init] ERROR: sample sheet must define exactly one group for "
                 f"role '{role}', got {sorted(groups)}."
             )
-    control_group = next(iter(role_groups["control"]))
-    case_group = next(iter(role_groups["case"]))
-    if len(samples) != 2:
-        sys.exit("[init] ERROR: the first schema-v2 release supports exactly two groups.")
+    if len(samples) not in (1, 2):
+        sys.exit("[init] ERROR: schema-v2 supports one or two groups.")
+    if len(samples) == 2:
+        for role, groups in role_groups.items():
+            if len(groups) != 1:
+                sys.exit(
+                    f"[init] ERROR: a two-group sample sheet must define exactly "
+                    f"one group for role '{role}', got {sorted(groups)}."
+                )
+    control_group = next(iter(role_groups["control"]), None)
+    case_group = next(iter(role_groups["case"]), None)
     return {
         "samples": samples,
         "group_roles": group_roles,
@@ -198,6 +205,11 @@ def load_sample_sheet(sample_sheet, *, require_files=True):
 
 
 def _default_analysis(samples, control_group, case_group):
+    dmr_samples = {
+        group: [sample["name"] for sample in samples[group]]
+        for group in (control_group, case_group)
+        if group is not None
+    }
     return {
         "qc": {"params": {"fragment": 167, "step_size": 2000}},
         "power": {"params": {
@@ -216,10 +228,7 @@ def _default_analysis(samples, control_group, case_group):
         "dmr": {
             "tool": "metilene",
             "params": {"cores": 20, "q_thr": 0.05, "top_n": 20, "extra_args": ""},
-            "samples": {
-                control_group: [s["name"] for s in samples[control_group]],
-                case_group: [s["name"] for s in samples[case_group]],
-            },
+            "samples": dmr_samples,
         },
         "frag": {
             "occupancy": {"tool": "danpos", "params": {"extra_args": "--paired 1 -u 0 -c 1000000"}},
@@ -386,7 +395,11 @@ def resolve_schema_v2(
         "schema_version": SCHEMA_VERSION,
         "project_name": raw["project_name"],
         "output_dir": output_dir,
-        "comparison": f"{control_group}_vs_{case_group}",
+        "comparison": (
+            f"{control_group}_vs_{case_group}"
+            if control_group is not None and case_group is not None
+            else None
+        ),
         "control_group": control_group,
         "case_group": case_group,
         "group_roles": sample_data["group_roles"],
@@ -419,20 +432,22 @@ def _validate(cfg):
     if not cfg.get("output_dir", "").strip():
         errors.append("'output_dir' must not be empty.")
 
-    comp = cfg.get("comparison", "")
-    if "_vs_" not in comp:
-        errors.append("'comparison' must be formatted as 'GroupA_vs_GroupB'.")
-    else:
-        ga, gb = comp.split("_vs_", 1)
-        samples = cfg.get("samples", {})
-        if ga not in samples:
-            errors.append(f"comparison group_a '{ga}' not found in samples.")
-        if gb not in samples:
-            errors.append(f"comparison group_b '{gb}' not found in samples.")
-
     samples = cfg.get("samples", {})
-    if len(samples) != 2:
-        errors.append(f"'samples' must define exactly 2 groups, got {len(samples)}.")
+    comp = cfg.get("comparison")
+    if len(samples) == 1:
+        if comp not in (None, ""):
+            errors.append("'comparison' must be unset for a one-group project.")
+    elif len(samples) == 2:
+        if not isinstance(comp, str) or "_vs_" not in comp:
+            errors.append("'comparison' must be formatted as 'GroupA_vs_GroupB'.")
+        else:
+            ga, gb = comp.split("_vs_", 1)
+            if ga not in samples:
+                errors.append(f"comparison group_a '{ga}' not found in samples.")
+            if gb not in samples:
+                errors.append(f"comparison group_b '{gb}' not found in samples.")
+    else:
+        errors.append(f"'samples' must define 1 or 2 groups, got {len(samples)}.")
 
     for grp, members in samples.items():
         if not isinstance(members, list) or len(members) == 0:
@@ -516,7 +531,13 @@ def get_all_samples(cfg):
 
 def get_group_names(cfg):
     """Return (group_a, group_b) from comparison field."""
-    ga, gb = cfg["comparison"].split("_vs_", 1)
+    comparison = cfg.get("comparison")
+    if not isinstance(comparison, str) or "_vs_" not in comparison:
+        sys.exit(
+            "[analysis] ERROR: this command requires a two-group project with "
+            "one control group and one case group."
+        )
+    ga, gb = comparison.split("_vs_", 1)
     return ga, gb
 
 
@@ -992,11 +1013,14 @@ def init(args):
     configure_command_log(os.path.join(paths["provenance"], "commands.jsonl"))
     if cfg.get("schema_version") == SCHEMA_VERSION and not created:
         write_lockfile(args.config)
-    ga, gb = get_group_names(cfg)
-
     disp(f"Project    : {cfg['project_name']}")
     disp(f"Output dir : {cfg['output_dir']}/results/")
-    disp(f"Comparison : {ga} (label=0) vs {gb} (label=1)")
+    comparison = cfg.get("comparison")
+    if isinstance(comparison, str) and "_vs_" in comparison:
+        ga, gb = comparison.split("_vs_", 1)
+        disp(f"Comparison : {ga} (label=0) vs {gb} (label=1)")
+    else:
+        disp("Comparison : not defined (processing/QC only)")
     for grp, members in cfg["samples"].items():
         names = [s["name"] for s in members]
         disp(f"  {grp} ({len(names)}): {', '.join(names)}")

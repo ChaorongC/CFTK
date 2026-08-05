@@ -32,6 +32,21 @@ def make_sample_sheet(project_dir):
     return sheet
 
 
+def make_single_group_sample_sheet(project_dir, role="control"):
+    reads = project_dir / "reads"
+    reads.mkdir()
+    (reads / "sample_R1.fq.gz").touch()
+    (reads / "sample_R2.fq.gz").touch()
+    group = "Healthy" if role == "control" else "Disease"
+    sheet = project_dir / "samples.tsv"
+    sheet.write_text(
+        "sample\tgroup\trole\tinput_type\tr1\tr2\tbam\n"
+        f"sample\t{group}\t{role}\tfastq\t"
+        "reads/sample_R1.fq.gz\treads/sample_R2.fq.gz\t\n"
+    )
+    return sheet
+
+
 def compact_config(project_dir, reference_root):
     return {
         "schema_version": 2,
@@ -78,6 +93,22 @@ def test_sample_sheet_preserves_order_roles_and_resolves_paths(init_module, tmp_
     assert parsed["samples"]["Healthy"][0]["r1"] == str(
         (tmp_path / "reads/control_R1.fq.gz").resolve()
     )
+
+
+@pytest.mark.parametrize(
+    ("role", "group", "missing_role"),
+    [("control", "Healthy", "case"), ("case", "Disease", "control")],
+)
+def test_sample_sheet_allows_one_group_for_processing(
+    init_module, tmp_path, role, group, missing_role
+):
+    sheet = make_single_group_sample_sheet(tmp_path, role=role)
+
+    parsed = init_module.load_sample_sheet(str(sheet))
+
+    assert list(parsed["samples"]) == [group]
+    assert parsed[f"{role}_group"] == group
+    assert parsed[f"{missing_role}_group"] is None
 
 
 @pytest.mark.parametrize(
@@ -150,6 +181,22 @@ def test_schema_v2_resolves_to_legacy_contract(init_module, tmp_path):
     assert config["process"]["step3_markdup"]["tool"] == "sambamba"
     assert config["reference_data"]["target_bed"].endswith("covered_targets.bed")
     assert config["output_dir"] == str(tmp_path.resolve())
+
+
+def test_schema_v2_single_group_is_processing_only(init_module, tmp_path):
+    make_single_group_sample_sheet(tmp_path)
+    make_profile(tmp_path / "references", checksums=True)
+    config_path = tmp_path / "cftk_init.json"
+    config_path.write_text(json.dumps(compact_config(tmp_path, tmp_path / "references")))
+
+    config = init_module.load_config(str(config_path))
+
+    assert config["comparison"] is None
+    assert config["control_group"] == "Healthy"
+    assert config["case_group"] is None
+    assert config["analysis"]["dmr"]["samples"] == {"Healthy": ["sample"]}
+    with pytest.raises(SystemExit, match="requires a two-group project"):
+        init_module.get_group_names(config)
 
 
 def test_schema_v2_exposes_advanced_duplicate_marking_tool(
@@ -273,6 +320,28 @@ def test_noninteractive_init_creates_compact_config_and_portable_lock(
     assert "reference_root" not in lock
     assert len(lock["sample_sheet"]["sha256"]) == 64
     assert len(lock["reference_profile"]["components"]["genome_fa"]) == 64
+
+
+def test_noninteractive_init_completes_for_one_group(
+    init_module, tmp_path, capsys
+):
+    sheet = make_single_group_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root, checksums=True)
+    config_path = tmp_path / "cftk_init.json"
+
+    init_module.init(init_args(
+        config_path,
+        sample_sheet=str(sheet),
+        reference_root=str(reference_root),
+        reference_mode="local",
+        profile="twist_human_methylome_hg38",
+        profile_version="1.0.0",
+    ))
+
+    assert config_path.is_file()
+    assert (tmp_path / "cftk.lock.json").is_file()
+    assert "Comparison : not defined (processing/QC only)" in capsys.readouterr().err
 
 
 def test_noninteractive_init_requires_explicit_inputs(init_module, tmp_path):

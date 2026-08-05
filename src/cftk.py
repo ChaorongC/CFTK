@@ -333,7 +333,7 @@ def _cmd_frag(args):
 
 
 def _cmd_mesa(args):
-    from init import get_matrix_path
+    from init import get_group_names, get_matrix_path
     from analysis.mesa import run_modality_performance, run_mesa_model, run_mesa_loocv
     from visualization.visualization import plot_mesa
     from util import disp
@@ -348,11 +348,7 @@ def _cmd_mesa(args):
     cfg, paths = _load(args)
     disp("[mesa] config loaded")
     mesa_p = _p(cfg, "analysis", "mesa", "params", default={})
-    if "comparison" in cfg:
-        ga, gb = cfg["comparison"].split("_vs_", 1)
-    else:
-        ga = cfg.get("control_group", "")
-        gb = cfg.get("case_group", "")
+    ga, gb = get_group_names(cfg)
     disp(f"[mesa] groups: {ga} vs {gb}")
 
     args.output_dir = paths["mesa"]
@@ -379,8 +375,9 @@ def _cmd_mesa(args):
 
 def _make_label(cfg, paths):
     import pandas as pd
+    from init import get_group_names
     from util import disp
-    ga, gb = cfg["comparison"].split("_vs_", 1)
+    ga, gb = get_group_names(cfg)
 
     group_roles = cfg.get("group_roles", {})
     if group_roles:
@@ -410,10 +407,11 @@ def _make_label(cfg, paths):
 
 
 def _cmd_report(args):
+    from init import get_group_names
     from report.report_generator import generate_report
 
     cfg, paths = _load(args)
-    ga, gb = cfg["comparison"].split("_vs_", 1)
+    ga, gb = get_group_names(cfg)
     os.makedirs(paths["report"], exist_ok=True)
 
     args.results_dir  = paths["results"]
