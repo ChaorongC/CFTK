@@ -955,10 +955,8 @@ def process(args, config_path="./cftk_init.json"):
     if 4 in steps:
         successful = [bg for bg in bedgraph_results
                       if bg and os.path.exists(bg)]
-        if len(successful) > 1:
+        if successful:
             _merge_cpg(successful, samples, paths)
-        elif len(successful) == 1:
-            disp("[merge] Single sample — skipping cpg_matrix merge.")
         else:
             disp("[merge] WARNING: no successful bedGraph files found.")
 
