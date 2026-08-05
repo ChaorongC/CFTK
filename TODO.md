@@ -68,23 +68,26 @@ Completion criteria:
 
 ## 3. Beginner `cftk run`
 
-**Status:** TODO, requires defined failure and resume semantics.
+**Status:** IMPLEMENTED AND STRUCTURALLY VALIDATED; biological acceptance
+remains in section 4.
 
-Why this is pending: The current `run-all` command can continue after some
-failures and advanced workflows require different references. A beginner
-command must not imply reliable completion when only part of a workflow ran.
+The beginner command is intentionally narrower than `run-all`: schema-v2 core
+processing plus QC using the validated default toolchain.
 
 Implementation:
 
-- Define the beginner default as core processing plus QC; keep differential,
+- [x] Define the beginner default as core processing plus QC; keep differential,
   DMR, fragmentomics, MESA, and power workflows explicit.
-- Validate configuration, inputs, tools, and required profile components before
+- [x] Validate configuration, inputs, tools, and required profile components before
   launching work.
-- Define fail-fast behavior, checkpoint validity, resume behavior, dry-run
+- [x] Define fail-fast behavior, checkpoint validity, resume behavior, dry-run
   output, cancellation, and final success criteria.
-- Extend the implemented exact-command ledger with resolved config/lock hashes,
-  external-tool versions, expected-artifact validation, and output checksums.
-- Return nonzero when any required stage fails or its expected artifacts are
+- [x] Extend the implemented exact-command ledger with resolved config/lock
+  hashes, external-tool versions, expected-artifact validation, per-attempt
+  mirrors, events, and human/machine-readable summaries. Large output checksums
+  remain deferred because hashing BAMs adds substantial duplicate I/O; config,
+  lock, and run options are hashed now.
+- [x] Return nonzero when any required stage fails or its expected artifacts are
   missing. Do not implement this as a silent alias for `run-all`.
 
 Completion criteria:
@@ -97,7 +100,7 @@ Completion criteria:
 
 ## 4. Real-Data End-To-End Validation
 
-**Status:** In progress; structural end-to-end smoke validation is complete,
+**Status:** In progress; clean structural end-to-end validation is complete,
 but biological equivalence and production acceptance remain open.
 
 Completed validation used one control and one sALS sample, each deterministically
@@ -112,6 +115,15 @@ and incomplete-read-group issues.
 This establishes real-tool compatibility for the tested path. It does not
 establish biological equivalence, cohort-wide output quality, or
 Sambamba-versus-Picard duplicate-marking agreement.
+
+The final beginner-run validation used a clean workflow-profile environment
+and the same deterministic two-sample inputs. Slurm job `55026503` exited zero
+after recovering from a deliberately preserved failed attempt: 13 partial
+trimming artifacts were quarantined, all seven stages completed, all 24
+external commands exited zero, 56 output/report rows and 16 figure rows were
+validated, and all 95 run-summary links resolved. A second `cftk run` resumed
+all seven stages and executed zero external commands. The resulting matrix has
+420,435 CpGs and two sample columns.
 
 Implementation:
 
@@ -154,13 +166,51 @@ implementation:
 - Bismark alternatives remain accepted configuration values but have not been
   validated for output parity with the default bwa-meth/MethylDackel path.
 - ``run-all`` continues after some failures and has no scientifically defined
-  resume contract. It is not a beginner-safe substitute for the planned
-  ``cftk run`` command.
+  resume contract. It is an expert compatibility command, not a substitute for
+  the implemented beginner ``cftk run`` command.
 - Managed reference acquisition and bwa-meth index construction require large
   cache and temporary-storage allocations. Shared HPC users may need to set
   ``CFTK_REFERENCE_ROOT`` to a lab-managed location before initialization.
-- The base Python dependency set currently installs modeling and fragmentomics
-  packages for a core-processing user. In the validated environment this also
-  pulled XGBoost's large NCCL runtime. A future packaging change should define
-  tested ``processing``, ``analysis``, and ``web`` extras without changing
-  numerical dependencies silently.
+- Python dependencies are split by the tested beginner core, ``analysis``,
+  ``fragmentomics``, and ``web`` command graphs. XGBoost is not required; it is
+  an optional, non-default MESA classifier and its Linux wheel pulled a large
+  NCCL runtime. Keep each extra validated independently as commands and
+  numerical libraries evolve.
+- ``--parallel`` controls concurrent samples but does not divide the configured
+  per-sample core count. For example, ``--parallel 2`` with ``process.cores=20``
+  can launch two 20-process ``bamPEFragmentSize`` jobs. Document the allocation
+  formula now, then add an explicit total-core budget or per-sample-core option
+  before calling scheduler resource use beginner-safe.
+
+## 6. Conda Distribution
+
+**Status:** TODO; the current two-step source installation is accepted and
+documented, while native Conda/Bioconda distribution remains future work.
+
+- [x] Document the supported source-checkout sequence: create and activate the
+  environment, then install CFTK with `python -m pip install .`.
+
+- [ ] Build a versioned Conda recipe from the released CFTK source artifact and
+  declare the validated Python and external-tool runtime dependencies in the
+  recipe.
+- [ ] Publish through an appropriate maintained channel, preferably Bioconda
+  for the bioinformatics toolchain, following its recipe, test, license, and
+  update-bot requirements.
+- [ ] Make a fresh user installation require only a Conda/Mamba command, with
+  no user-facing pip step or repository checkout.
+- [ ] Add recipe tests for `cftk --help`, `cftk init --help`, `cftk doctor`, and
+  a packaged synthetic dry run; retain the separate real-data release gate.
+- [ ] Decide how optional analysis, fragmentomics, and web functionality maps
+  to Conda packages or documented add-on environments without reintroducing
+  XGBoost into the default processing installation.
+- [ ] Verify package and dependency licenses and define the tagged-release
+  requirements for the Conda source artifact.
+
+Completion criteria:
+
+- A beginner can install the released package and validated default toolchain
+  with one Conda or Mamba command and no repository checkout.
+- The published Conda artifact reproduces the validated default dependency and
+  external-tool graph on a clean supported platform.
+- Package metadata, licenses, tests, and provenance are sufficient for a
+  reproducible tagged release.

@@ -81,3 +81,23 @@ def test_list_argv_and_parallel_writes_are_replayable(util_module, monkeypatch, 
     assert len(records) == 40
     assert all(record["command"].startswith("tool --sample ") for record in records)
     assert all(record["run_id"] != "unconfigured" for record in records)
+
+
+def test_command_records_are_mirrored_with_explicit_workflow_run_id(
+    util_module, monkeypatch, tmp_path
+):
+    global_log = tmp_path / "provenance/commands.jsonl"
+    attempt_log = tmp_path / "provenance/runs/run-1/commands.jsonl"
+    util_module.configure_command_log(
+        global_log, run_id="run-1", mirror_paths=[attempt_log]
+    )
+    monkeypatch.setattr(
+        util_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0),
+    )
+
+    util_module.run_command("tool --version", label="tool")
+
+    assert _records(global_log) == _records(attempt_log)
+    assert {record["run_id"] for record in _records(attempt_log)} == {"run-1"}

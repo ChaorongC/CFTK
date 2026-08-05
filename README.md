@@ -45,6 +45,12 @@ mamba activate cftk
 python -m pip install .
 ```
 
+The default install is intentionally limited to the beginner processing and QC
+workflow. Use `.[analysis]` for differential, power, and MESA commands,
+`.[fragmentomics]` for WPS/FinaleToolkit workflows, or `.[web]` for the
+Streamlit calculator. CFTK reports the required extra when an optional Python
+dependency is missing.
+
 Create a project directory and start the guided initializer:
 
 ```bash
@@ -88,20 +94,24 @@ Inspect available commands:
 cftk --help
 ```
 
-Before processing, run the read-only readiness check:
+Run the beginner workflow from the initialized project directory:
 
 ```bash
-cftk doctor
+cftk run
 ```
 
-`doctor` verifies the selected tools, full reference hashes and companions,
-project lock, inputs, and output location. It does not download, index, repair,
-or modify source data. A `FAIL` exits with status 1; `WARN` alone exits with
-status 0. Use `cftk doctor --json` for schedulers or CI.
+`cftk run` performs a read-only doctor preflight, then runs core processing and
+QC with fail-fast stage boundaries. It validates every required artifact and
+writes an immutable attempt directory under
+`results/provenance/runs/<run-id>/`, including exact commands, tool versions,
+expected outputs and figures, stage states, and `run-summary.html`. Preview the
+plan without tool probes or computation with `cftk run --dry-run`.
 
-Run raw processing after initialization:
+Use `cftk doctor` separately for readiness diagnostics or JSON output to CI.
+The individual commands remain available for expert workflows:
 
 ```bash
+cftk doctor --json
 cftk --config cftk_init.json process -s 1 2 3 4
 ```
 
@@ -122,9 +132,9 @@ are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-A fail-safe beginner `cftk run` and production-grade biological acceptance of
-the real-data workflow remain explicit release TODOs. The completed structural
-smoke validation and remaining criteria are tracked in [TODO.md](TODO.md).
+The fail-safe beginner `cftk run` is implemented. Clean real-data validation,
+biological acceptance criteria, and Sambamba-versus-Picard agreement remain
+release work tracked in [TODO.md](TODO.md).
 
 ## Model-Power Calculator
 

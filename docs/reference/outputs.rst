@@ -13,6 +13,13 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``provenance/commands.jsonl``
      - Append-only start and finish records for exact external commands,
        including return codes and working directories.
+   * - ``provenance/runs/<run-id>/``
+     - Immutable beginner-run attempt directory containing stage state,
+       config/lock/options identity, doctor and tool reports, an immediate
+       command-ledger mirror, expected output/figure tables, events, and an
+       HTML summary.
+   * - ``provenance/quarantine/<run-id>/``
+     - Preserved partial or damaged stage artifacts moved before a safe retry.
    * - ``1_process/1_trimming/``
      - Trimmed FASTQ files and trimming QC reports.
    * - ``1_process/2_alignment/``
@@ -49,3 +56,10 @@ Completion Checks
 Launching a command is not enough to mark a workflow complete. Check command
 exit status, the command provenance ledger, logs, and expected files under the
 output directory before using downstream steps.
+
+``cftk run`` automates the stage-level subset of these checks. Its
+``expected-outputs.tsv`` and ``figures.tsv`` enumerate the exact required paths,
+and ``run.json`` distinguishes ``planned``, ``pending``, ``running``,
+``complete``, ``failed``, ``interrupted``, ``skipped``, ``resumed``, and
+``adopted`` states. Artifact validation checks required file existence and
+nonempty content; it does not currently calculate checksums for large outputs.

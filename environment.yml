@@ -15,5 +15,6 @@ dependencies:
   - picard=3.0.0
   - methyldackel=0.6.1
   - bedtools=2.31.1
+  - deeptools=3.5.5
   - multiqc=1.19
   - pip

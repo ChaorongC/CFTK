@@ -4,6 +4,12 @@ Fragmentomics
 The ``frag`` command runs fragmentomics workflows. If no sub-workflow flag is
 provided, CFTK attempts all configured fragmentomics analyses.
 
+Install the fragmentomics Python dependencies before using this command:
+
+.. code-block:: bash
+
+   python -m pip install ".[fragmentomics]"
+
 .. code-block:: bash
 
    cftk --config cftk_init.json frag

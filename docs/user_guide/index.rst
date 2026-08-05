@@ -9,6 +9,7 @@ features, perform differential analysis, model modalities, and generate reports.
    :maxdepth: 2
 
    configuration
+   beginner_run
    processing
    quality_control
    differential

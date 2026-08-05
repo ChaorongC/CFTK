@@ -50,6 +50,30 @@ Commands
    returns exit status 0; one or more failures returns 1; invalid arguments
    return 2.
 
+``run``
+   Run the beginner-safe schema-v2 core workflow. The default order is process
+   steps 1-4, then QC steps 2, 0, and 1. FASTQ projects run every stage; BAM
+   projects record process steps 1-2 as skipped. Mixed inputs, legacy configs,
+   missing locks, alternative processing tools, and failed doctor checks stop
+   before computation.
+
+   .. code-block:: bash
+
+      cftk run
+      cftk run --dry-run
+      cftk run --parallel 2 --qc-dinucleotide
+
+   ``--adopt-existing`` is required to validate complete outputs that predate a
+   run manifest. Partial untrusted outputs are preserved in a timestamped
+   quarantine before retry. Automatic resume requires a matching config, lock,
+   options hash, trusted prior stage state, and currently valid artifacts.
+   ``--target-bed PATH`` is an expert one-run Picard target override.
+
+   Every attempt writes ``run.json``, event and command JSONL files, doctor and
+   tool-version JSON, output/figure TSVs, and ``run-summary.html`` under
+   ``results/provenance/runs/<run-id>/``. See
+   :doc:`../user_guide/beginner_run` for the full contract.
+
 ``process``
    Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's
    covered-target BED for Picard metrics, with a bundled source-checkout
@@ -63,7 +87,9 @@ Commands
    ``--skip-picard-metrics`` for a workflow that does not need them.
 
 ``qc``
-   Run QC steps 1 through 3.
+   Run QC steps 0 through 3. Step 0 assembles QC tables, step 1 plots
+   methylation distributions, step 2 measures fragment lengths, and step 3
+   computes dinucleotide frequencies.
 
    .. code-block:: bash
 
@@ -134,7 +160,8 @@ Commands
       cftk --config cftk_init.json report
 
 ``run-all``
-   Run the configured end-to-end pipeline.
+   Run the expert compatibility pipeline. It may continue after a failed step
+   and does not provide the validated run-state/resume contract of ``cftk run``.
 
    .. code-block:: bash
 

@@ -48,7 +48,7 @@ End-To-End API Smoke Test
 
 The following small calculation verifies reference loading, template
 preparation, cross-validation, and matched null calibration. Run it from a
-repository checkout after ``python -m pip install .``:
+repository checkout after ``python -m pip install ".[analysis]"``:
 
 .. code-block:: python
 

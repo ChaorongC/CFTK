@@ -18,8 +18,10 @@ except ImportError:  # pragma: no cover - Windows does not provide fcntl.
 
 
 _COMMAND_LOG_ENV = "CFTK_COMMAND_LOG"
+_COMMAND_LOG_MIRRORS_ENV = "CFTK_COMMAND_LOG_MIRRORS"
 _COMMAND_RUN_ID_ENV = "CFTK_COMMAND_RUN_ID"
 _COMMAND_LOG_PATH = None
+_COMMAND_LOG_MIRROR_PATHS = []
 _COMMAND_RUN_ID = None
 _COMMAND_LOG_LOCK = threading.Lock()
 
@@ -28,33 +30,58 @@ def disp(msg):
     print(f"@{time.asctime()}\t{msg}", file=sys.stderr)
 
 
-def configure_command_log(path):
+def configure_command_log(path, *, run_id=None, mirror_paths=None):
     """Configure the project-scoped JSONL ledger for external commands.
 
     ``None`` disables recording and is useful for isolated callers/tests.
     The path is also inherited by multiprocessing workers through the
     environment, while the run ID remains stable for the current workflow.
     """
-    global _COMMAND_LOG_PATH, _COMMAND_RUN_ID
+    global _COMMAND_LOG_PATH, _COMMAND_LOG_MIRROR_PATHS, _COMMAND_RUN_ID
     if path is None:
         _COMMAND_LOG_PATH = None
+        _COMMAND_LOG_MIRROR_PATHS = []
         _COMMAND_RUN_ID = None
         os.environ.pop(_COMMAND_LOG_ENV, None)
+        os.environ.pop(_COMMAND_LOG_MIRRORS_ENV, None)
         os.environ.pop(_COMMAND_RUN_ID_ENV, None)
         return None
 
     configured_path = os.path.abspath(os.fspath(path))
     os.makedirs(os.path.dirname(configured_path), exist_ok=True)
-    if configured_path != _COMMAND_LOG_PATH or _COMMAND_RUN_ID is None:
+    if mirror_paths is not None:
+        mirrors = []
+        for value in mirror_paths:
+            candidate = os.path.abspath(os.fspath(value))
+            if candidate != configured_path and candidate not in mirrors:
+                os.makedirs(os.path.dirname(candidate), exist_ok=True)
+                mirrors.append(candidate)
+        _COMMAND_LOG_MIRROR_PATHS = mirrors
+    elif configured_path != _COMMAND_LOG_PATH:
+        _COMMAND_LOG_MIRROR_PATHS = []
+
+    if run_id is not None:
+        _COMMAND_RUN_ID = str(run_id)
+    elif configured_path != _COMMAND_LOG_PATH or _COMMAND_RUN_ID is None:
         _COMMAND_RUN_ID = uuid.uuid4().hex
     _COMMAND_LOG_PATH = configured_path
     os.environ[_COMMAND_LOG_ENV] = _COMMAND_LOG_PATH
+    os.environ[_COMMAND_LOG_MIRRORS_ENV] = json.dumps(_COMMAND_LOG_MIRROR_PATHS)
     os.environ[_COMMAND_RUN_ID_ENV] = _COMMAND_RUN_ID
     return _COMMAND_LOG_PATH
 
 
-def _command_log_path():
-    return _COMMAND_LOG_PATH or os.environ.get(_COMMAND_LOG_ENV)
+def _command_log_paths():
+    primary = _COMMAND_LOG_PATH or os.environ.get(_COMMAND_LOG_ENV)
+    if not primary:
+        return []
+    mirrors = _COMMAND_LOG_MIRROR_PATHS
+    if not mirrors:
+        try:
+            mirrors = json.loads(os.environ.get(_COMMAND_LOG_MIRRORS_ENV, "[]"))
+        except json.JSONDecodeError:
+            mirrors = []
+    return [primary, *[path for path in mirrors if path != primary]]
 
 
 def _command_text(command):
@@ -64,22 +91,23 @@ def _command_text(command):
 
 
 def _write_command_record(record):
-    path = _command_log_path()
-    if not path:
+    paths = _command_log_paths()
+    if not paths:
         return
     line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
     try:
         with _COMMAND_LOG_LOCK:
-            with open(path, "a", encoding="utf-8") as handle:
-                if fcntl is not None:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-                handle.write(line)
-                handle.flush()
-                if fcntl is not None:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            for path in paths:
+                with open(path, "a", encoding="utf-8") as handle:
+                    if fcntl is not None:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                    handle.write(line)
+                    handle.flush()
+                    if fcntl is not None:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     except OSError as exc:
         raise RuntimeError(
-            f"[util] ERROR: could not write command provenance {path}: {exc}"
+            f"[util] ERROR: could not write command provenance: {exc}"
         ) from exc
 
 
