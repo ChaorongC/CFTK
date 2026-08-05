@@ -64,6 +64,89 @@ summary so ``qc_summary.tsv`` can include its median fragment-length metrics.
      - Inspect methylation distribution
      - Methylation-distribution PNG and PDF.
 
+Rendered Stage Examples
+-----------------------
+
+The following are sanitized renders from the validated two-sample workflow.
+They show what a beginner should expect to see; the actual run directory still
+contains the full-resolution reports, tables, and per-sample files listed in
+the stage contract above.
+
+.. figure:: ../_static/workflow_stage_evidence.png
+   :alt: Required output and figure counts for each CFTK workflow stage
+   :width: 100%
+
+   The stage-evidence view confirms that every stage has the expected output
+   and figure inventory. ``missing 0`` means the required artifact contract
+   was satisfied for that run.
+
+.. figure:: ../_static/workflow_trimming_quality.png
+   :alt: Representative FastQC mean quality score plot after trimming
+   :width: 100%
+
+   ``process.1`` produces FastQC and MultiQC quality plots in addition to the
+   trimmed FASTQs and text reports.
+
+.. figure:: ../_static/workflow_alignment_mapped_reads.png
+   :alt: Representative mapped-read fraction plot after bisulfite alignment
+   :width: 100%
+
+   ``process.2`` produces BAM/BAI files and alignment tables; the MultiQC
+   report supplies plots such as mapped-read fraction.
+
+.. figure:: ../_static/workflow_picard_insert_size.png
+   :alt: Representative Picard insert-size histogram after duplicate marking
+   :width: 70%
+
+   ``process.3`` produces duplicate-marked BAMs, Sambamba/Picard metrics, and
+   Picard insert-size, GC-bias, and read-length figures.
+
+.. figure:: ../_static/workflow_mbias_OT.png
+   :alt: Representative original-top M-bias plot
+   :width: 70%
+
+   ``process.4`` produces M-bias tables, parsed OT/OB bounds, CpG bedGraphs,
+   and strand-specific M-bias plots before creating the merged matrix.
+
+.. figure:: ../_static/workflow_mbias_OB.png
+   :alt: Representative original-bottom M-bias plot
+   :width: 70%
+
+   The OB plot is inspected together with the OT plot; neither plot alone is a
+   conversion or sample-quality decision.
+
+.. figure:: ../_static/workflow_fragment_length_example.png
+   :alt: Representative control and sALS fragment-length comparison
+   :width: 70%
+
+   ``qc.2`` produces raw fragment-length tables and per-sample/combined
+   fragment-length figures. The mononucleosomal pattern is descriptive and
+   must be interpreted with the other QC outputs.
+
+.. figure:: ../_static/workflow_methylation_distribution_example.png
+   :alt: Representative methylation distribution plot
+   :width: 70%
+
+   ``qc.1`` produces the methylation-distribution PNG and PDF. ``qc.0`` is
+   intentionally table-only: its ``qc_summary.tsv`` and ``qc_scores.tsv`` are
+   the machine-readable outputs consumed by downstream checks.
+
+.. figure:: ../_static/workflow_qc_overview.png
+   :alt: Sanitized overview of mapped reads, duplicates, methylation coverage, and depth
+   :width: 100%
+
+   The run-level QC overview is a screening figure generated from
+   ``qc_summary.tsv``. It does not replace inspection of the underlying tables,
+   M-bias plots, conversion controls, or assay-specific thresholds.
+
+.. figure:: ../_static/workflow_resource_plan.png
+   :alt: Example CFTK recorded CPU resource plan by stage
+   :width: 100%
+
+   A dry-run also renders the resolved CPU budget and estimated peak threads.
+   This is a planning figure, not a performance benchmark; the scheduler
+   allocation and ``resource-plan.json`` remain authoritative.
+
 For a BAM project, ``process.1`` and ``process.2`` are recorded as ``skipped``;
 the run starts at duplicate marking. CFTK rejects a project that mixes FASTQ
 and BAM rows because such samples do not share the same stage graph.
