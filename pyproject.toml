@@ -15,28 +15,36 @@ dependencies = [
     "numpy>=1.24",
     "pandas>=1.5",
     "scipy>=1.10",
-    "scikit-learn>=1.2",
     "matplotlib>=3.7",
     "seaborn>=0.12",
-    "adjustText>=0.8",
     "joblib>=1.2",
     "pysam>=0.21",
-    "pyBigWig>=0.3",
-    "bx-python>=0.9",
-    "statsmodels>=0.14",
-    "xgboost>=1.7",
-    "finaletoolkit>=0.9",
 ]
 
 [project.optional-dependencies]
-web = ["streamlit>=1.36"]
+analysis = [
+    "scikit-learn>=1.2",
+    "adjustText>=0.8",
+    "statsmodels>=0.14",
+    "mesa-cfdna>=0.7.1",
+]
+fragmentomics = [
+    "bx-python>=0.9",
+    "pyBigWig>=0.3",
+    "finaletoolkit>=0.9",
+]
+web = [
+    "streamlit>=1.36",
+    "scikit-learn>=1.2",
+    "statsmodels>=0.14",
+]
 
 [project.scripts]
 cftk = "cftk:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["cftk", "doctor", "init", "process", "reference_profiles", "util"]
+py-modules = ["cftk", "doctor", "init", "process", "reference_profiles", "run_workflow", "util"]
 include-package-data = false
 
 [tool.setuptools.packages.find]

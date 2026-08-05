@@ -3,6 +3,11 @@ Raw Processing
 
 The ``process`` command runs raw processing steps 1 through 4.
 
+For a new schema-v2 project, prefer :doc:`beginner_run`; it invokes these same
+processing implementations with preflight, fail-fast stage validation, and
+manifest-backed resume. Use ``process`` directly to select or override expert
+steps.
+
 .. code-block:: bash
 
    cftk --config cftk_init.json process -s 1 2 3 4
@@ -70,9 +75,12 @@ different covered-target file:
 
    cftk --config cftk_init.json process -s 3 --target-bed /path/to/targets.bed
 
-Installed distributions do not include repository ``data/``. Installed users
-must pass ``--target-bed``. For a non-targeted workflow, disable both Picard
-collections explicitly with ``--skip-picard-metrics``.
+Schema-v2 projects resolve the target BED from their installed reference
+profile, including wheel installations. Repository ``data/`` is not packaged,
+but it is not needed for managed-profile target resolution. Legacy installed
+workflows without a profile must pass ``--target-bed``. For a non-targeted
+workflow, disable both Picard collections explicitly with
+``--skip-picard-metrics``.
 
 Parallel Samples
 ----------------
@@ -130,4 +138,6 @@ For a new compute environment, validate steps incrementally:
    cftk --config cftk_init.json process -s 3
    cftk --config cftk_init.json process -s 4
 
-Check logs and expected output files after each step before using ``run-all``.
+Check logs and expected output files after each direct expert step. The
+beginner ``cftk run`` command performs these checks automatically; ``run-all``
+does not.

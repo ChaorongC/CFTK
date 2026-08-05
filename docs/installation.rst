@@ -4,6 +4,15 @@ Installation
 CFTK can be installed from a source checkout. External bioinformatics tools
 and large reference datasets remain separate from the Python distribution.
 
+A source installation has two required steps:
+
+1. Create and activate the environment. This installs the external
+   bioinformatics tools used by the processing workflow.
+2. Install CFTK inside that environment. This installs the Python package and
+   the ``cftk`` command.
+
+Run both steps in order. Creating the environment alone does not install CFTK.
+
 Clone The Repository
 --------------------
 
@@ -25,20 +34,31 @@ create it from the repository root:
    mamba activate cftk
 
 The environment pins Python, Java, Trim Galore, FastQC, bwa-meth, BWA,
-Sambamba, samtools, Picard, MethylDackel, BEDTools, and MultiQC. It is a
+Sambamba, samtools, Picard, MethylDackel, BEDTools, deepTools, and MultiQC. It is a
 portable environment specification, not a byte-for-byte solver lock. Record an
 explicit platform lock or export for a production analysis.
 
 Install CFTK
 ------------
 
-Install the core package from the checkout:
+Install the beginner processing package from the checkout:
 
 .. code-block:: bash
 
    python -m pip install .
 
-Include the Streamlit dependency when developing or deploying the calculator:
+This default installs the Python libraries used by ``cftk init``, ``doctor``,
+``run``, process/QC, reporting, and their standard figures. Install optional
+workflow groups only when they are needed:
+
+.. code-block:: bash
+
+   python -m pip install ".[analysis]"       # differential, power, and MESA
+   python -m pip install ".[fragmentomics]" # WPS and FinaleToolkit workflows
+   python -m pip install ".[analysis,fragmentomics]" # expert run-all inputs
+
+Include the calculator's statistical and Streamlit dependencies when
+developing or deploying it:
 
 .. code-block:: bash
 
@@ -46,6 +66,20 @@ Include the Streamlit dependency when developing or deploying the calculator:
 
 The installation provides the ``cftk`` console command and the model-power
 Python modules. It does not install repository-root reference data.
+
+Planned Distribution
+--------------------
+
+The two-step source-checkout workflow above is the supported installation path
+today. No intermediate change to make ``environment.yml`` install the local
+checkout automatically is planned or required.
+
+The eventual distribution target is a versioned Conda package, preferably
+through Bioconda. It will install CFTK and its validated default processing
+toolchain with one Conda or Mamba command and no repository checkout. Analysis,
+fragmentomics, and web dependencies will remain optional rather than expanding
+the default beginner environment. See the distribution milestones in the
+repository ``TODO.md``.
 
 Run The Model-Power Calculator
 ------------------------------
@@ -71,6 +105,8 @@ Run CFTK
    cd example_study
    cftk init
    cftk doctor
+   cftk run --dry-run
+   cftk run
 
 The guided initializer creates compact project metadata and installs the pinned
 managed default profile. Acquisition peaks at approximately 5.7 GB before
@@ -148,6 +184,7 @@ Many workflows call command-line tools that Python packaging does not install:
 - ``MethylDackel``
 - ``bedtools``
 - ``multiqc``
+- ``bamPEFragmentSize`` from deepTools
 - ``DANPOS``
 - UCSC tools such as ``wigToBigWig`` and ``bigWigAverageOverBed``
 - ``metilene`` for DMR analysis

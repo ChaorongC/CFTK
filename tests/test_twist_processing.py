@@ -46,6 +46,71 @@ def test_bwameth_alignment_generates_sample_read_group(
     assert "@RG\\tID:sample_1\\tSM:sample_1\\tLB:sample_1\\tPL:ILLUMINA" in commands[0]
 
 
+def test_trim_galore_basename_reports_are_renamed_for_qc_parser(
+    process_module, monkeypatch, tmp_path
+):
+    trimming = tmp_path / "trimming"
+    paths = {**_paths(tmp_path), "trimming": str(trimming)}
+    sample = {
+        "name": "sample_1",
+        "input_type": "fastq",
+        "r1": "sample_1_R1.fastq.gz",
+        "r2": "sample_1_R2.fastq.gz",
+    }
+
+    def fake_run(command, label=""):
+        trimming.mkdir(parents=True, exist_ok=True)
+        for filename in (
+            "sample_1_val_1.fq.gz",
+            "sample_1_val_2.fq.gz",
+            "sample_1_val_1_fastqc.html",
+            "sample_1_val_1_fastqc.zip",
+            "sample_1_val_2_fastqc.html",
+            "sample_1_val_2_fastqc.zip",
+            "sample_1_R1.fastq.gz_trimming_report.txt",
+            "sample_1_R2.fastq.gz_trimming_report.txt",
+        ):
+            (trimming / filename).write_text("report\n")
+
+    monkeypatch.setattr(process_module, "run_command", fake_run)
+
+    process_module._step1_trim(
+        sample,
+        {"tool": "trim_galore", "params": {}},
+        {},
+        paths,
+        4,
+    )
+
+    assert (trimming / "sample_1_R1_trimming_report.txt").is_file()
+    assert (trimming / "sample_1_R2_trimming_report.txt").is_file()
+    assert not (trimming / "sample_1_R1.fastq.gz_trimming_report.txt").exists()
+    assert not (trimming / "sample_1_R2.fastq.gz_trimming_report.txt").exists()
+
+
+def test_trim_checkpoint_fix_preserves_canonical_reports(
+    process_module, tmp_path
+):
+    trimming = tmp_path / "trimming"
+    trimming.mkdir()
+    sample = {
+        "name": "sample_1",
+        "input_type": "fastq",
+        "r1": "sample_1_R1.fastq.gz",
+        "r2": "sample_1_R2.fastq.gz",
+    }
+    for mate in ("R1", "R2"):
+        (trimming / f"sample_1_{mate}_trimming_report.txt").write_text(
+            f"Input filename: sample_1_{mate}\n"
+        )
+
+    process_module._apply_trim_rename_fix(sample, str(trimming), "fq.gz")
+
+    for mate in ("R1", "R2"):
+        report = trimming / f"sample_1_{mate}_trimming_report.txt"
+        assert report.read_text() == f"Input filename: sample_1_{mate}\n"
+
+
 @pytest.mark.parametrize("params, expected_depth", [({}, 10), ({"min_depth": 17}, 17)])
 def test_methyldackel_merges_cpg_context_without_chh_or_chg(
     process_module, monkeypatch, tmp_path, params, expected_depth

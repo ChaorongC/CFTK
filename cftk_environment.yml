@@ -185,7 +185,6 @@ dependencies:
   - libwebp-base=1.6.0
   - libxcb=1.17.0
   - libxcrypt=4.4.36
-  - libxgboost=3.2.0
   - libxml2=2.15.1
   - libxml2-16=2.15.1
   - libxml2-devel=2.15.1
@@ -243,7 +242,6 @@ dependencies:
   - pthread-stubs=0.4
   - ptyprocess=0.7.0
   - pure_eval=0.2.3
-  - py-xgboost=3.2.0
   - py2bit=0.3.3
   - pyaml-env=1.2.2
   - pybigwig=0.3.25
@@ -401,7 +399,6 @@ dependencies:
   - unicodedata2=17.0.0
   - urllib3=2.6.3
   - wheel=0.46.3
-  - xgboost=3.2.0
   - xmltodict=1.0.4
   - xopen=2.0.2
   - xorg-libice=1.1.2

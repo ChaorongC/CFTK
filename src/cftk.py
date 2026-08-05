@@ -5,6 +5,16 @@ import argparse
 import os
 import sys
 
+_OPTIONAL_IMPORT_EXTRAS = {
+    "adjustText": "analysis",
+    "mesa": "analysis",
+    "sklearn": "analysis",
+    "statsmodels": "analysis",
+    "bx": "fragmentomics",
+    "finaletoolkit": "fragmentomics",
+    "pyBigWig": "fragmentomics",
+}
+
 _SRC = os.path.dirname(os.path.abspath(__file__))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -55,6 +65,11 @@ def _cmd_doctor(args):
     else:
         print(render_human(report))
     raise SystemExit(report["exit_code"])
+
+
+def _cmd_run(args):
+    from run_workflow import run
+    return run(args)
 
 
 def _cmd_process(args):
@@ -726,6 +741,27 @@ def build_parser():
     )
     p.set_defaults(func=_cmd_doctor)
 
+    # beginner run
+    p = sub.add_parser(
+        "run",
+        help="Run the validated schema-v2 core workflow with fail-fast resume.",
+    )
+    p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument("--target-bed", default=None, metavar="PATH")
+    p.add_argument(
+        "--dry-run", action="store_true",
+        help="Write the stage/output plan without probing tools or processing data.",
+    )
+    p.add_argument(
+        "--adopt-existing", action="store_true",
+        help="Explicitly validate and adopt complete pre-manifest outputs; quarantine partial ones.",
+    )
+    p.add_argument(
+        "--qc-dinucleotide", action="store_true",
+        help="Also run the expensive dinucleotide-frequency QC stage.",
+    )
+    p.set_defaults(func=_cmd_run)
+
     # process
     p = sub.add_parser("process",
         help="Part 1: Raw data processing (steps 1-4).\n"
@@ -839,7 +875,18 @@ def main():
     if not hasattr(args, "func"):
         parser.print_help()
         sys.exit(0)
-    args.func(args)
+    try:
+        args.func(args)
+    except ModuleNotFoundError as exc:
+        missing = (exc.name or "").split(".", 1)[0]
+        extra = _OPTIONAL_IMPORT_EXTRAS.get(missing)
+        if not extra:
+            raise
+        parser.error(
+            f"command '{getattr(args, 'command', '')}' requires the optional "
+            f"'{extra}' dependencies; install with: python -m pip install "
+            f"'cftk[{extra}]'"
+        )
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ The major commands are:
 
 - ``init``: validate the config and prepare the reference genome.
 - ``doctor``: check selected processing readiness without changing the project.
+- ``run``: run the fail-fast schema-v2 core processing and QC workflow.
 - ``process``: run raw processing steps 1 through 4.
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
@@ -67,33 +68,44 @@ The major commands are:
 - ``merge``: build feature matrices from user-provided files.
 - ``vis``: regenerate plots from existing results.
 - ``report``: generate a self-contained HTML report.
-- ``run-all``: run the configured end-to-end workflow.
+- ``run-all``: run the expert compatibility workflow, which may continue after
+  failures.
 
-4. Run Rawdata Processing
--------------------------
+4. Run The Beginner Workflow
+----------------------------
 
-After initialization and a passing doctor report:
+After initialization:
 
 .. code-block:: bash
 
-   cftk --config cftk_init.json process -s 1 2 3 4
+   cftk run
 
-The process command creates standard subdirectories under
-``<output_dir>/results/1_process`` and merges per-sample CpG calls into
-``cpg_matrix.tsv`` after successful methylation calling.
+This runs processing steps 1 through 4, fragment-length QC, QC table assembly,
+and methylation-distribution QC. It runs doctor first, stops before downstream
+stages after a required failure, and validates all required files. BAM-only
+projects skip trimming and alignment. Mixed FASTQ/BAM projects are rejected.
+
+Review the human summary at
+``results/provenance/runs/<run-id>/run-summary.html``. See
+:doc:`user_guide/beginner_run` for dry-run, resume, adoption, quarantine,
+Slurm, and exact artifact behavior.
 
 Exact external commands are appended to
 ``<output_dir>/results/provenance/commands.jsonl`` before execution, followed
 by completion records containing exit status. Keep this ledger with the
 project configuration, lock file, and outputs when archiving an analysis.
 
-5. Run Downstream Analysis
----------------------------
+5. Run Expert Or Downstream Commands
+------------------------------------
 
 Examples:
 
+Install ``.[analysis]`` and/or ``.[fragmentomics]`` before invoking the
+corresponding optional commands shown below.
+
 .. code-block:: bash
 
+   cftk --config cftk_init.json process -s 1 2 3 4
    cftk --config cftk_init.json qc -s 1 2 3
    cftk --config cftk_init.json diff
    cftk --config cftk_init.json frag --wps
@@ -101,14 +113,15 @@ Examples:
    cftk --config cftk_init.json report
 
 
-6. End-To-End Runs
-------------------
+6. Expert Compatibility Runs
+----------------------------
 
-The ``run-all`` command runs the configured pipeline end to end:
+The legacy ``run-all`` command spans additional configured analyses:
 
 .. code-block:: bash
 
    cftk --config cftk_init.json run-all
 
-Because ``run-all`` continues after some failures, review logs and expected
-artifacts before treating a run as complete.
+``run-all`` catches some failures and continues, and it does not use the
+beginner run-state contract. Keep it for advanced compatibility workflows; use
+``cftk run`` when fail-fast completion and validated resume are required.

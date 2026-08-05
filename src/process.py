@@ -120,6 +120,15 @@ def _step1_trim(sample, step_cfg, ref_data, paths, per_cores):
             (f"{r2_base}.fq.gz_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
             (f"{r1_base}_trimming_report.txt",           f"{name}_R1_trimming_report.txt"),
             (f"{r2_base}_trimming_report.txt",           f"{name}_R2_trimming_report.txt"),
+            # With --basename, Trim Galore 0.6.11 uses the output mate stem.
+            (f"{name}_R1.fastq.gz_trimming_report.txt", f"{name}_R1_trimming_report.txt"),
+            (f"{name}_R2.fastq.gz_trimming_report.txt", f"{name}_R2_trimming_report.txt"),
+            (f"{name}_R1.fq.gz_trimming_report.txt",    f"{name}_R1_trimming_report.txt"),
+            (f"{name}_R2.fq.gz_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
+            (f"{name}_R1.fastq_trimming_report.txt",    f"{name}_R1_trimming_report.txt"),
+            (f"{name}_R2.fastq_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
+            (f"{name}_R1.fq_trimming_report.txt",       f"{name}_R1_trimming_report.txt"),
+            (f"{name}_R2.fq_trimming_report.txt",       f"{name}_R2_trimming_report.txt"),
             # FastQC files — Trim Galore names after the --basename output
             (f"{name}_val_1_fastqc.zip",  f"{name}_R1_fastqc.zip"),
             (f"{name}_val_1_fastqc.html", f"{name}_R1_fastqc.html"),
@@ -133,6 +142,8 @@ def _step1_trim(sample, step_cfg, ref_data, paths, per_cores):
         for old_name, new_name in rename_map:
             old_path = os.path.join(out, old_name)
             new_path = os.path.join(out, new_name)
+            if old_path == new_path:
+                continue
             if os.path.exists(old_path):
                 if os.path.exists(new_path):
                     # new already exists (e.g. from a previous run): remove old
@@ -563,6 +574,14 @@ def _apply_trim_rename_fix(sample, out_dir: str, ext: str):
         (f"{r2_base}.fq.gz_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
         (f"{r1_base}_trimming_report.txt",           f"{name}_R1_trimming_report.txt"),
         (f"{r2_base}_trimming_report.txt",           f"{name}_R2_trimming_report.txt"),
+        (f"{name}_R1.fastq.gz_trimming_report.txt", f"{name}_R1_trimming_report.txt"),
+        (f"{name}_R2.fastq.gz_trimming_report.txt", f"{name}_R2_trimming_report.txt"),
+        (f"{name}_R1.fq.gz_trimming_report.txt",    f"{name}_R1_trimming_report.txt"),
+        (f"{name}_R2.fq.gz_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
+        (f"{name}_R1.fastq_trimming_report.txt",    f"{name}_R1_trimming_report.txt"),
+        (f"{name}_R2.fastq_trimming_report.txt",    f"{name}_R2_trimming_report.txt"),
+        (f"{name}_R1.fq_trimming_report.txt",       f"{name}_R1_trimming_report.txt"),
+        (f"{name}_R2.fq_trimming_report.txt",       f"{name}_R2_trimming_report.txt"),
         (f"{name}_val_1_fastqc.zip",  f"{name}_R1_fastqc.zip"),
         (f"{name}_val_1_fastqc.html", f"{name}_R1_fastqc.html"),
         (f"{name}_val_2_fastqc.zip",  f"{name}_R2_fastqc.zip"),
@@ -573,6 +592,8 @@ def _apply_trim_rename_fix(sample, out_dir: str, ext: str):
     for old_name, new_name in rename_map:
         old_path = os.path.join(out_dir, old_name)
         new_path = os.path.join(out_dir, new_name)
+        if old_path == new_path:
+            continue
         if os.path.exists(old_path):
             if os.path.exists(new_path):
                 os.remove(old_path)

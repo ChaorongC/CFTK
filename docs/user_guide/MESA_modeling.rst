@@ -6,6 +6,13 @@ MESA Modeling
 
 CFTK includes MESA-style multimodal modeling commands.
 
+Install the analysis dependencies, including ``mesa-cfdna``, before using
+these commands:
+
+.. code-block:: bash
+
+   python -m pip install ".[analysis]"
+
 Run modality performance screening:
 
 .. code-block:: bash

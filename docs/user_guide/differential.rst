@@ -4,6 +4,13 @@ Differential Analysis
 CFTK separates feature-level differential analysis from region-level DMR
 analysis.
 
+Install the downstream statistical dependencies before using differential or
+DMR commands:
+
+.. code-block:: bash
+
+   python -m pip install ".[analysis]"
+
 Feature-Level Analysis
 ----------------------
 

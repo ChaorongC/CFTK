@@ -9,9 +9,14 @@ Command And Configuration
 -------------------------
 
 - ``src/cftk.py``: command-line parser and dispatcher.
+- ``src/doctor.py``: non-repairing project, reference, input, and tool
+  readiness diagnostics.
 - ``src/init.py``: config validation, sample helpers, output path helpers, and
   config summary.
 - ``src/process.py``: raw processing steps and CpG matrix merge.
+- ``src/run_workflow.py``: fail-fast beginner stage orchestration, artifact
+  contracts, resume/quarantine decisions, and per-attempt provenance.
+- ``src/util.py``: shared helpers and exact external-command recording.
 
 Analysis Modules
 ----------------

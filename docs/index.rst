@@ -58,7 +58,11 @@ We provide a model power calculator to evaluate whether a proposed biomarker dis
 
 
 
-We organized the CFTK workflow from rawdata processing to multimodal machine learning modeling and provide a report for results summarizing. The current workflow is driven by the ``cftk`` command implemented in ``cftk.py`` and controled by the user-prepared config file ``cftk_init.json``.
+The beginner workflow starts with ``cftk init`` and ``cftk run``. CFTK validates
+the schema-v2 project, runs core processing and QC with fail-fast stage
+boundaries, and records exact commands, expected outputs, figures, tool
+versions, and resume decisions. Advanced downstream analysis remains available
+through explicit expert commands.
 
 .. image:: _static/cftk_workflow.png
    :alt: CFTK Workflow Overview
@@ -88,7 +92,8 @@ Please follow the guides below to explore more details about the CFTK package.
       :link: getting_started
       :link-type: doc
 
-      Run CFTK workflow step by step or use the ``run-all`` command to finish all steps end to end.
+      Run the validated beginner workflow, inspect every stage and output, or
+      select expert commands for advanced analyses.
 
    .. grid-item-card:: Command Reference
       :link: reference/cli
