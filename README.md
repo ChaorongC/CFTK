@@ -132,9 +132,10 @@ are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-The fail-safe beginner `cftk run` is implemented. Clean real-data validation,
-biological acceptance criteria, and Sambamba-versus-Picard agreement remain
-release work tracked in [TODO.md](TODO.md).
+The fail-safe beginner `cftk run` is implemented. Clean real-data validation
+and biological acceptance remain release work tracked in [TODO.md](TODO.md).
+Sambamba is the default duplicate-marking tool; advanced users can select
+Picard explicitly in the schema-v2 process configuration.
 
 ## Model-Power Calculator
 

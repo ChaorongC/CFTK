@@ -147,8 +147,37 @@ def test_schema_v2_resolves_to_legacy_contract(init_module, tmp_path):
         config["process"]["step3_markdup"]["params"]["picard_java_memory"]
         == "8g"
     )
+    assert config["process"]["step3_markdup"]["tool"] == "sambamba"
     assert config["reference_data"]["target_bed"].endswith("covered_targets.bed")
     assert config["output_dir"] == str(tmp_path.resolve())
+
+
+def test_schema_v2_exposes_advanced_duplicate_marking_tool(
+    init_module, tmp_path
+):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["process"] = {"duplicate_marking_tool": "Picard"}
+
+    config = init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
+
+    assert config["process"]["step3_markdup"]["tool"] == "picard"
+
+
+@pytest.mark.parametrize("value", ["unknown", 1, True])
+def test_schema_v2_rejects_invalid_duplicate_marking_tool(
+    init_module, tmp_path, value
+):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["process"] = {"duplicate_marking_tool": value}
+
+    with pytest.raises(SystemExit, match="duplicate_marking_tool"):
+        init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
 
 
 def test_environment_reference_root_overrides_config_hint(

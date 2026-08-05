@@ -1,11 +1,10 @@
-Validation And Acceptance
-=========================
+Internal Validation Record
+==========================
 
-This page shows how CFTK was checked against a historical ALS BAM cohort and
-how the default Sambamba duplicate-marking choice was compared with Picard.
-These are release-validation activities, not commands a beginner must run
-before every ordinary project. They are useful when learning what CFTK means
-by *ready*, *blocked*, and *technically comparable*.
+This maintainer-only record shows how CFTK was checked against a historical ALS
+BAM cohort and how the default Sambamba duplicate-marking implementation was
+compared with Picard. It is not part of the beginner workflow, does not run
+automatically, and does not define a user-facing equivalence gate.
 
 Keep the BAMs, scheduler logs, JSON reports, and command ledgers in a private
 validation directory. Do not commit patient-level files or absolute local
@@ -128,11 +127,9 @@ The JSON and TSV report, for each sample:
    :alt: Sambamba and Picard duplicate fraction and classification agreement
    :width: 760px
 
-The figure is descriptive. A release gate must state its tolerances before
-looking at the results; for example, a project may predeclare limits for
-duplicate-fraction difference, read-classification agreement, target coverage,
-and methylation differences. Such limits are CFTK acceptance criteria, not
-universal biological equivalence claims.
+The figure is descriptive. Maintainers may predeclare tolerances when
+repeating this diagnostic, but those tolerances are not applied by ordinary
+CFTK runs and are not universal biological equivalence claims.
 
 Measured Results From The Preserved Pair
 ----------------------------------------
@@ -172,13 +169,12 @@ the control and 4.417667 for sALS. The output JSON and TSV preserve the full
 precision, together with tool versions, per-command resource reports, and
 checksums.
 
-The provisional gates proposed before computation were duplicate-fraction
-difference <=0.5 percentage points, read agreement >=99.5%, duplicate-key
-Jaccard >=0.95, relative mean-target-coverage difference <=1%, and weighted
-methylation difference <=0.5 percentage points. The observed pair would pass
-those provisional gates, but they are not yet a CFTK-wide default or a claim
-that Sambamba and Picard are biologically interchangeable. Confirm the
-project-level tolerances before using this comparison as a release gate.
+The provisional tolerances used for this internal experiment were
+duplicate-fraction difference <=0.5 percentage points, read agreement >=99.5%,
+duplicate-key Jaccard >=0.95, relative mean-target-coverage difference <=1%,
+and weighted methylation difference <=0.5 percentage points. They are recorded
+for reproducibility only; they are not CFTK defaults or a claim that Sambamba
+and Picard are biologically interchangeable.
 
 What This Does Not Prove
 ------------------------

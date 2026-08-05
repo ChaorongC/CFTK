@@ -31,6 +31,7 @@ _SAFE_CHARS = set("abcdefghijklmnopqrstuvwxyz"
                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                   "0123456789-_.")
 _JAVA_MEMORY_RE = re.compile(r"^[1-9][0-9]*[kKmMgGtT]$")
+_MARKDUP_TOOLS = {"sambamba", "picard", "samblaster"}
 
 
 def load_config(
@@ -329,6 +330,18 @@ def resolve_schema_v2(
     cores = process_settings.get("cores", 20)
     parallel = process_settings.get("parallel_samples", 1)
     min_depth = process_settings.get("min_depth", 10)
+    duplicate_marking_tool = process_settings.get(
+        "duplicate_marking_tool", "sambamba"
+    )
+    if (
+        not isinstance(duplicate_marking_tool, str)
+        or duplicate_marking_tool.lower() not in _MARKDUP_TOOLS
+    ):
+        sys.exit(
+            "[init] ERROR: process.duplicate_marking_tool must be one of "
+            "sambamba, picard, or samblaster."
+        )
+    duplicate_marking_tool = duplicate_marking_tool.lower()
     picard_java_memory = process_settings.get("picard_java_memory", "8g")
     for name, value in (
         ("cores", cores),
@@ -352,7 +365,7 @@ def resolve_schema_v2(
         "step1_trimming": {"tool": "trim_galore", "params": {"cores": cores, "extra_args": ""}},
         "step2_alignment": {"tool": "bwameth", "params": {"cores": cores, "extra_args": ""}},
         "step3_markdup": {
-            "tool": "sambamba",
+            "tool": duplicate_marking_tool,
             "params": {
                 "cores": cores,
                 "picard_java_memory": picard_java_memory.lower(),
@@ -467,6 +480,11 @@ def _validate(cfg):
         )
 
     markdup_params = proc.get("step3_markdup", {}).get("params", {})
+    markdup_tool = proc.get("step3_markdup", {}).get("tool", "sambamba")
+    if not isinstance(markdup_tool, str) or markdup_tool.lower() not in _MARKDUP_TOOLS:
+        errors.append(
+            "process.step3_markdup.tool must be one of sambamba, picard, or samblaster."
+        )
     picard_java_memory = markdup_params.get("picard_java_memory", "8g")
     if (
         not isinstance(picard_java_memory, str)
