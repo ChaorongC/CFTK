@@ -116,6 +116,14 @@ This establishes real-tool compatibility for the tested path. It does not
 establish biological equivalence, cohort-wide output quality, or
 Sambamba-versus-Picard duplicate-marking agreement.
 
+Phase 16 now provides the first reproducible technical agreement comparison:
+one preserved control and one preserved sALS 5-million-pair alignment were
+processed by both Sambamba and Picard from the same pre-markdup BAM. Structural
+checks passed, duplicate classification agreement was 99.994% for both
+samples, Twist target metrics matched at reported precision, and CpG overlap
+was 100%. This is a strong subset result, but full-depth/cohort acceptance and
+formal thresholds remain open.
+
 The final beginner-run validation used a clean workflow-profile environment
 and the same deterministic two-sample inputs. Slurm job `55026503` exited zero
 after recovering from a deliberately preserved failed attempt: 13 partial
