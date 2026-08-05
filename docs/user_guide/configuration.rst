@@ -29,7 +29,9 @@ project JSON; it retains only one overridable reference-root hint:
 ``assay`` defaults to ``twist_human_methylome`` and ``genome`` defaults to
 ``hg38``. ``output_dir`` and ``samples`` are resolved relative to the config
 file. ``cores``, ``parallel_samples``, and ``min_depth`` must be positive
-integers; their defaults are 20, 1, and 10.
+integers; their defaults are 20, 1, and 10. Picard commands use an 8 GB maximum
+Java heap by default. Advanced users can set ``process.picard_java_memory`` to
+a positive JVM size such as ``12g`` or ``4096m``.
 
 At runtime CFTK expands schema v2 into the established nested configuration, so
 processing and downstream commands keep their existing interfaces. Existing

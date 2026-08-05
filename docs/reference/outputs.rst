@@ -10,6 +10,9 @@ CFTK writes results below ``<output_dir>/results``.
      - Purpose
    * - ``0_power/``
      - Statistical power analysis outputs and plots.
+   * - ``provenance/commands.jsonl``
+     - Append-only start and finish records for exact external commands,
+       including return codes and working directories.
    * - ``1_process/1_trimming/``
      - Trimmed FASTQ files and trimming QC reports.
    * - ``1_process/2_alignment/``
@@ -44,5 +47,5 @@ Completion Checks
 -----------------
 
 Launching a command is not enough to mark a workflow complete. Check command
-exit status, logs, and expected files under the output directory before using
-downstream steps.
+exit status, the command provenance ledger, logs, and expected files under the
+output directory before using downstream steps.

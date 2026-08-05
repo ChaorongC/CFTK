@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 from reference_profiles import (
@@ -18,7 +17,7 @@ from reference_profiles import (
     managed_profile_available,
     sha256_file,
 )
-from util import disp
+from util import configure_command_log, disp, recorded_run
 
 REQUIRED_TOP  = ["project_name", "output_dir", "comparison", "samples",
                   "reference_data", "process", "analysis"]
@@ -31,6 +30,7 @@ SAMPLE_SHEET_COLUMNS = ("sample", "group", "role", "input_type", "r1", "r2", "ba
 _SAFE_CHARS = set("abcdefghijklmnopqrstuvwxyz"
                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                   "0123456789-_.")
+_JAVA_MEMORY_RE = re.compile(r"^[1-9][0-9]*[kKmMgGtT]$")
 
 
 def load_config(
@@ -329,6 +329,7 @@ def resolve_schema_v2(
     cores = process_settings.get("cores", 20)
     parallel = process_settings.get("parallel_samples", 1)
     min_depth = process_settings.get("min_depth", 10)
+    picard_java_memory = process_settings.get("picard_java_memory", "8g")
     for name, value in (
         ("cores", cores),
         ("parallel_samples", parallel),
@@ -338,11 +339,26 @@ def resolve_schema_v2(
             sys.exit(
                 f"[init] ERROR: schema-v2 process.{name} must be a positive integer."
             )
+    if (
+        not isinstance(picard_java_memory, str)
+        or not _JAVA_MEMORY_RE.fullmatch(picard_java_memory)
+    ):
+        sys.exit(
+            "[init] ERROR: schema-v2 process.picard_java_memory must use a "
+            "positive JVM size such as '8g' or '4096m'."
+        )
     process = {
         "parallel_samples": parallel,
         "step1_trimming": {"tool": "trim_galore", "params": {"cores": cores, "extra_args": ""}},
         "step2_alignment": {"tool": "bwameth", "params": {"cores": cores, "extra_args": ""}},
-        "step3_markdup": {"tool": "sambamba", "params": {"cores": cores, "extra_args": ""}},
+        "step3_markdup": {
+            "tool": "sambamba",
+            "params": {
+                "cores": cores,
+                "picard_java_memory": picard_java_memory.lower(),
+                "extra_args": "",
+            },
+        },
         "step4_methylation": {"tool": "methyldackel", "params": {"cores": cores, "min_depth": min_depth, "extra_args": ""}},
     }
     output_dir = _resolve_relative(raw.get("output_dir", "."), config_dir)
@@ -450,6 +466,17 @@ def _validate(cfg):
             "process.step4_methylation.params.min_depth must be a positive integer."
         )
 
+    markdup_params = proc.get("step3_markdup", {}).get("params", {})
+    picard_java_memory = markdup_params.get("picard_java_memory", "8g")
+    if (
+        not isinstance(picard_java_memory, str)
+        or not _JAVA_MEMORY_RE.fullmatch(picard_java_memory)
+    ):
+        errors.append(
+            "process.step3_markdup.params.picard_java_memory must use a positive "
+            "JVM size such as '8g' or '4096m'."
+        )
+
     return errors
 
 
@@ -482,6 +509,7 @@ def get_work_paths(cfg):
     return {
         "work_dir":      wd,
         "results":       r,
+        "provenance":    os.path.join(r, "provenance"),
         "power":         os.path.join(r, "0_power"),
         "process":       p,
         "qc":            os.path.join(r, "2_qc"),
@@ -815,7 +843,7 @@ def get_sequence_dictionary_path(reference_fa):
 def _run_reference_command(command, label):
     disp(f"CMD [{label}]: {shlex.join(command)}")
     try:
-        return subprocess.run(command).returncode
+        return recorded_run(command, label=label).returncode
     except FileNotFoundError:
         return 127
 
@@ -937,6 +965,8 @@ def init(args):
     if created:
         _create_project_config(args)
     cfg  = load_config(args.config)
+    paths = get_work_paths(cfg)
+    configure_command_log(os.path.join(paths["provenance"], "commands.jsonl"))
     if cfg.get("schema_version") == SCHEMA_VERSION and not created:
         write_lockfile(args.config)
     ga, gb = get_group_names(cfg)

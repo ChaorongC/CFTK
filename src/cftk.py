@@ -12,6 +12,7 @@ if _SRC not in sys.path:
 
 def _load(args):
     from init import load_config, get_work_paths
+    from util import configure_command_log
     cfg   = load_config(args.config)
     if "comparison" not in cfg:
         cg = cfg.get("control_group", "")
@@ -24,6 +25,7 @@ def _load(args):
                 "or both 'control_group' and 'case_group'."
             )
     paths = get_work_paths(cfg)
+    configure_command_log(os.path.join(paths["provenance"], "commands.jsonl"))
     return cfg, paths
 
 

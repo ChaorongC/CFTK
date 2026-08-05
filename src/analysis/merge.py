@@ -21,12 +21,11 @@ Output location per modality:
 
 import os
 import shutil
-import subprocess
 import sys
 
 import pandas as pd
 
-from util import disp
+from util import disp, recorded_run
 
 
 # ── Type readers ──────────────────────────────────────────────────────────────
@@ -57,7 +56,7 @@ def _read_bedgraph(entries, out_path):
         f" > {tmp}'"
     )
     disp(f"[merge] bedtools unionbedg → {out_path}")
-    ret = subprocess.run(cmd, shell=True)
+    ret = recorded_run(cmd, shell=True, label="merge bedGraph matrix")
     if ret.returncode != 0:
         sys.exit("[merge] ERROR: bedtools unionbedg failed.")
 

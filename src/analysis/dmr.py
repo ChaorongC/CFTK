@@ -7,17 +7,16 @@ Step 3: annotate DMRs via dmr_annotation.r (annotatr hg38)
 
 import os
 import shutil
-import subprocess
 import sys
 
-from util import disp
+from util import disp, recorded_run
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _run(cmd, label=""):
     disp(f"[dmr] {label}")
-    ret = subprocess.run(cmd, shell=True)
+    ret = recorded_run(cmd, shell=True, label=f"dmr {label}")
     if ret.returncode != 0:
         sys.exit(f"[dmr] ERROR: failed — {label}")
 
@@ -81,7 +80,7 @@ def prepare_metilene_input(
     )
 
     disp(f"[dmr] Writing metilene input → {out_path}")
-    ret = subprocess.run(cmd, shell=True)
+    ret = recorded_run(cmd, shell=True, label="dmr annotation")
     if ret.returncode != 0:
         sys.exit("[dmr] ERROR: bedtools unionbedg pipeline failed.")
 

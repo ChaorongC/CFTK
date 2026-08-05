@@ -2,13 +2,14 @@
 
 import os
 import sys
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from util import recorded_run
 
 
 def _run(cmd, label="end_motif"):
     print(f"[{label}] {cmd[:120]}", file=sys.stderr)
-    ret = subprocess.run(cmd, shell=True)
+    ret = recorded_run(cmd, shell=True, label=label)
     if ret.returncode != 0:
         print(f"[{label}] ERROR: command failed.", file=sys.stderr)
 

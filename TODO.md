@@ -82,8 +82,8 @@ Implementation:
   launching work.
 - Define fail-fast behavior, checkpoint validity, resume behavior, dry-run
   output, cancellation, and final success criteria.
-- Record resolved paths, config/lock hashes, command lines, external-tool
-  versions, and output checksums in run provenance.
+- Extend the implemented exact-command ledger with resolved config/lock hashes,
+  external-tool versions, expected-artifact validation, and output checksums.
 - Return nonzero when any required stage fails or its expected artifacts are
   missing. Do not implement this as a silent alias for `run-all`.
 
@@ -97,17 +97,28 @@ Completion criteria:
 
 ## 4. Real-Data End-To-End Validation
 
-**Status:** TODO, requires external tools and an approved validation dataset.
+**Status:** In progress; structural end-to-end smoke validation is complete,
+but biological equivalence and production acceptance remain open.
 
-Why this is pending: Unit tests and mocked commands validate orchestration but
-cannot establish biological equivalence or real-tool compatibility.
+Completed validation used one control and one sALS sample, each deterministically
+subsampled to five million paired reads. The managed Twist/hg38 workflow ran
+through trimming, bwa-meth alignment, Sambamba duplicate marking, Picard target
+and alignment metrics, MethylDackel extraction, CpG merge, and QC. Slurm job
+`54985221` exited zero, produced a 420,435-CpG by two-sample matrix, and passed
+the scripted structural assertions. A separate read-only doctor audit covered
+21 controls and 19 sALS BAMs and exposed expected legacy-reference, stale-index,
+and incomplete-read-group issues.
+
+This establishes real-tool compatibility for the tested path. It does not
+establish biological equivalence, cohort-wide output quality, or
+Sambamba-versus-Picard duplicate-marking agreement.
 
 Implementation:
 
-- Select an approved small Twist Human Methylome paired-FASTQ dataset and pin
-  its inputs, reference profile, expected tool versions, and checksums.
-- Execute reference preparation, trimming, bwa-meth alignment, Sambamba
-  duplicate marking, Picard metrics, MethylDackel extraction, CpG merge, and QC.
+- Preserve the approved smoke inputs, managed reference profile, tool versions,
+  checksums, external validation recipe, and generated reports outside Git.
+- Repeat the complete workflow from a clean project so the command ledger also
+  includes stages that were reused from checkpoints during the successful retry.
 - Compare commands and key outputs with the Twist technical note, including
   read groups, mapping filters, target metrics, `--mergeContext`, minimum depth,
   and OT/OB handling.

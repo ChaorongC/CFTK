@@ -46,6 +46,23 @@ Each target BED and sequence-dictionary combination receives a content-keyed
 subdirectory, preventing metrics from a changed target profile from reusing an
 older interval list.
 
+Picard receives an explicit maximum Java heap of ``8g`` by default. This avoids
+the launcher's smaller default failing during ``CollectHsMetrics`` theoretical
+sensitivity calculation. Override it in compact schema-v2 configuration only
+when required by the compute environment:
+
+.. code-block:: json
+
+   {
+     "process": {
+       "picard_java_memory": "12g"
+     }
+   }
+
+The value is a per-Picard-process maximum, not an immediate reservation. With
+parallel samples, provision memory for up to
+``parallel_samples * picard_java_memory`` plus BAM-processing overhead.
+
 A source checkout finds the bundled Twist BED automatically. Override it for a
 different covered-target file:
 
@@ -80,6 +97,26 @@ After step 4, CFTK can merge per-sample CpG bedGraph files into:
 
 The merged matrix is the default input for methylation QC, differential
 analysis, MESA modeling, and report generation.
+
+Command Provenance
+------------------
+
+CFTK records external workflow commands in an append-only JSONL ledger:
+
+.. code-block:: text
+
+   <output_dir>/results/provenance/commands.jsonl
+
+Every command has a ``start`` record written before launch and a matching
+``finish`` record with the return code. Records include the full untruncated
+command, UTC timestamp, working directory, run ID, command ID, and a readable
+label. Parallel workers append to the same locked ledger. A ``start`` without a
+matching ``finish`` indicates that the process was interrupted or killed.
+
+The ledger records command execution, not scientific validity. Archive it with
+``cftk_init.json``, ``cftk.lock.json``, scheduler logs, software environment,
+and expected outputs. Command text is stored verbatim, so do not place secrets
+or access tokens in workflow ``extra_args``.
 
 Validation Strategy
 -------------------

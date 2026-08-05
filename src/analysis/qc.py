@@ -13,7 +13,7 @@ import sys
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from util import disp
+from util import disp, recorded_run
 
 
 def run_qc(args):
@@ -148,7 +148,7 @@ def _run_fragment_length(args):
             f"-p {cores} -b {bam}"
         )
         disp(f"[qc step2] {stem}")
-        ret = subprocess.run(cmd, shell=True)
+        ret = recorded_run(cmd, shell=True, label=f"qc fragment length [{stem}]")
         if ret.returncode != 0:
             disp(f"[qc step2] WARNING: bamPEFragmentSize failed for {bam}")
             return None
@@ -219,7 +219,7 @@ def _run_dinucleotide(args):
             f"> {sample_frag_tmp} || exit 1"
         )
         disp(f"[qc step3] bamtobed: {sample}")
-        ret = subprocess.run(cmd, shell=True)
+        ret = recorded_run(cmd, shell=True, label=f"qc bamtobed [{sample}]")
         if ret.returncode != 0:
             disp(f"[qc step3] WARNING: bamtobed failed for {bam}")
             return None
@@ -298,8 +298,14 @@ def _run_dinucleotide(args):
             f"-bed {window_file}"
         )
         with open(out_file, "w") as out_fh:
-            ret = subprocess.run(cmd, shell=True, stdout=out_fh,
-                                 stderr=subprocess.PIPE, text=True)
+            ret = recorded_run(
+                cmd,
+                shell=True,
+                stdout=out_fh,
+                stderr=subprocess.PIPE,
+                text=True,
+                label=f"qc bedtools nuc [{pattern}]",
+            )
         if ret.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
             stderr_msg = ret.stderr.strip() if ret.stderr else "(no stderr)"
             # Clean up empty output file

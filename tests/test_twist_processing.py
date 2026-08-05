@@ -123,19 +123,27 @@ def test_picard_interval_and_metrics_commands_checkpoint_independently(
         _sample(), "sample.markdup.bam", str(reference), interval_list, paths
     )
 
-    assert "picard BedToIntervalList" in commands[0]
+    assert "picard -Xmx8g BedToIntervalList" in commands[0]
     assert f"SD={reference.with_suffix('.dict')}" in commands[0]
-    assert "picard CollectHsMetrics" in commands[1]
+    assert "picard -Xmx8g CollectHsMetrics" in commands[1]
     assert f"BAIT_INTERVALS={interval_list}" in commands[1]
     assert f"TARGET_INTERVALS={interval_list}" in commands[1]
     assert "PER_TARGET_COVERAGE=" in commands[1]
     assert "MINIMUM_MAPPING_QUALITY=20" in commands[1]
     assert "COVERAGE_CAP=1000" in commands[1]
     assert "NEAR_DISTANCE=500" in commands[1]
-    assert "picard CollectMultipleMetrics" in commands[2]
+    assert "picard -Xmx8g CollectMultipleMetrics" in commands[2]
     assert "PROGRAM=CollectGcBiasMetrics" in commands[2]
     assert "PROGRAM=CollectInsertSizeMetrics" in commands[2]
     assert "PROGRAM=CollectAlignmentSummaryMetrics" in commands[2]
+
+
+def test_picard_java_memory_is_tunable_and_shell_safe(process_module):
+    assert process_module._picard_command("CollectHsMetrics", "12G") == (
+        "picard -Xmx12g CollectHsMetrics"
+    )
+    with pytest.raises(SystemExit, match="picard_java_memory"):
+        process_module._picard_command("CollectHsMetrics", "8g;touch bad")
 
 
 def test_existing_markdup_bam_can_receive_missing_picard_metrics(
@@ -154,7 +162,9 @@ def test_existing_markdup_bam_can_receive_missing_picard_metrics(
     monkeypatch.setattr(
         process_module,
         "_run_picard_metrics",
-        lambda sample, bam_in, ref, intervals, work_paths: seen.append(bam_in),
+        lambda sample, bam_in, ref, intervals, work_paths, memory: seen.append(
+            (bam_in, memory)
+        ),
     )
 
     result = process_module._run_step3_with_metrics(
@@ -164,7 +174,7 @@ def test_existing_markdup_bam_can_receive_missing_picard_metrics(
     )
 
     assert result == str(bam)
-    assert seen == [str(bam)]
+    assert seen == [(str(bam), "8g")]
 
 
 def test_target_bed_resolution_prefers_cli_override(process_module, tmp_path):
@@ -197,7 +207,9 @@ def test_schema_v2_profile_target_is_used_without_cli_override(
         process_module, "_resolve_target_bed", lambda path: seen.append(path) or path
     )
     monkeypatch.setattr(
-        process_module, "_prepare_picard_interval_list", lambda bed, ref, paths: "targets.interval_list"
+        process_module,
+        "_prepare_picard_interval_list",
+        lambda bed, ref, paths, memory: "targets.interval_list",
     )
     monkeypatch.setattr(process_module, "_run_multiqc", lambda *args, **kwargs: None)
 
