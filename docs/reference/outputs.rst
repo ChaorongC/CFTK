@@ -39,7 +39,8 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``1_process/5_merged_matrix/``
      - Merged CpG matrix.
    * - ``2_qc/``
-     - QC result tables and figures.
+     - QC result tables and figures. The beginner guide includes rendered
+       examples for the fragment-length and methylation-distribution outputs.
    * - ``3_differential/``
      - Differential, PCA, heatmap, violin, and DMR outputs.
    * - ``4_fragmentomics/occupancy/``
