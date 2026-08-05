@@ -185,11 +185,11 @@ implementation:
   an optional, non-default MESA classifier and its Linux wheel pulled a large
   NCCL runtime. Keep each extra validated independently as commands and
   numerical libraries evolve.
-- ``--parallel`` controls concurrent samples but does not divide the configured
-  per-sample core count. For example, ``--parallel 2`` with ``process.cores=20``
-  can launch two 20-process ``bamPEFragmentSize`` jobs. Document the allocation
-  formula now, then add an explicit total-core budget or per-sample-core option
-  before calling scheduler resource use beginner-safe.
+- ``process.cores`` is now enforced as one total CPU budget across processing
+  and QC. The run manifest records per-stage allocation, doctor checks detected
+  scheduler capacity, and nested sample/tool parallelism cannot exceed the
+  configured budget. Memory remains site- and tool-dependent and must still be
+  requested explicitly from the scheduler.
 
 ## 6. Conda Distribution
 

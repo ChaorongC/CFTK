@@ -8,6 +8,10 @@ import pytest
 @pytest.fixture
 def modules(monkeypatch):
     monkeypatch.syspath_prepend("src")
+    for variable in (
+        "SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE", "PBS_NP", "NSLOTS",
+    ):
+        monkeypatch.delenv(variable, raising=False)
     import cftk
     import run_workflow
 
@@ -261,9 +265,14 @@ def test_dry_run_writes_immutable_plan_without_executing_stages(
     assert all(stage["status"] == "planned" for stage in manifest["stages"])
     run_dir = Path(manifest["run_dir"])
     assert json.loads((run_dir / "run.json").read_text())["run_id"] == manifest["run_id"]
+    assert (run_dir / "resource-plan.json").is_file()
     assert (run_dir / "expected-outputs.tsv").is_file()
     assert (run_dir / "figures.tsv").is_file()
     assert (run_dir / "run-summary.html").is_file()
+    resources = json.loads((run_dir / "resource-plan.json").read_text())
+    assert resources["maximum_total_core_budget"] == 20
+    assert resources["stages"][0]["threads_per_sample"] == 20
+    assert "CPU resource plan" in (run_dir / "run-summary.html").read_text()
 
 
 def test_stage_failure_stops_downstream_and_records_terminal_status(

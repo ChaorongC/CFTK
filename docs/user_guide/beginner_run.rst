@@ -146,6 +146,9 @@ Every attempt is stored under:
    * - ``commands.jsonl``
      - Immediate mirror of this attempt's exact external command start/finish
        records. The project-wide copy remains ``provenance/commands.jsonl``.
+   * - ``resource-plan.json``
+     - Resolved total CPU budget, concurrent samples, per-sample threads,
+       estimated peak threads, and detected scheduler allocation.
    * - ``expected-outputs.tsv`` / ``figures.tsv``
      - Auditable stage-to-artifact inventories.
    * - ``run-summary.html``
@@ -200,9 +203,15 @@ status. For example:
    cd /path/to/project
    cftk run --parallel 2
 
-Choose memory from the actual data and tool settings. Picard's default maximum
-is 8 GB per concurrently processed sample, in addition to BAM processing and
-Python overhead.
+With the default ``process.cores: 20``, this runs at most two sample commands
+at a time and gives each multithreaded tool 10 threads. CFTK records that
+calculation in ``resource-plan.json`` and displays it in ``run-summary.html``.
+If ``SLURM_CPUS_PER_TASK`` is present and smaller than ``process.cores``,
+``cftk doctor`` and the run preflight fail before data processing.
+
+Choose memory from the actual data and tool settings. CPU budgeting does not
+divide memory automatically. Picard's default maximum is 8 GB per concurrently
+processed sample, in addition to BAM processing and Python overhead.
 
 Expert Compatibility Command
 ----------------------------

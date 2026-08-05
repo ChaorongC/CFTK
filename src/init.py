@@ -352,6 +352,11 @@ def resolve_schema_v2(
             sys.exit(
                 f"[init] ERROR: schema-v2 process.{name} must be a positive integer."
             )
+    if parallel > cores:
+        sys.exit(
+            "[init] ERROR: schema-v2 process.parallel_samples cannot exceed "
+            "the total process.cores budget."
+        )
     if (
         not isinstance(picard_java_memory, str)
         or not _JAVA_MEMORY_RE.fullmatch(picard_java_memory)

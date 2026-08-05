@@ -80,6 +80,11 @@ def _cmd_process(args):
 def _cmd_qc(args):
     from init import get_all_samples, get_bam, get_matrix_path, get_group_names
     from analysis.qc import run_qc
+    from resource_planning import (
+        detect_scheduler_allocation,
+        ensure_scheduler_capacity,
+        plan_parallelism,
+    )
     from visualization.visualization import plot_qc
 
     cfg, paths = _load(args)
@@ -97,9 +102,20 @@ def _cmd_qc(args):
     args.ref_fa       = _p(cfg, "reference_data", "genome_fa", default="")
     args.fragment     = qc_p.get("fragment",  167)
     args.step_size    = qc_p.get("step_size", 2000)
-    args.cores        = _p(cfg, "process", "step4_methylation", "params", "cores", default=1)
-    args.parallel     = getattr(args, "parallel", None) or \
-                        _p(cfg, "process", "parallel_samples", default=1)
+    total_cores = _p(
+        cfg, "process", "step4_methylation", "params", "cores", default=1
+    )
+    requested_parallel = getattr(args, "parallel", None) or \
+                         _p(cfg, "process", "parallel_samples", default=1)
+    try:
+        ensure_scheduler_capacity(total_cores, detect_scheduler_allocation())
+        resource_plan = plan_parallelism(
+            total_cores, requested_parallel, len(all_samples)
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[qc] ERROR: invalid CPU resource plan: {exc}") from exc
+    args.total_cores = total_cores
+    args.parallel = resource_plan["concurrent_samples"]
     args.group_labels = {
         ga: [s["name"] for s in cfg["samples"].get(ga, [])],
         gb: [s["name"] for s in cfg["samples"].get(gb, [])],
@@ -109,6 +125,9 @@ def _cmd_qc(args):
     steps = args.step if isinstance(args.step, list) else [args.step]
     for step in steps:
         args.step = step
+        args.cores = (
+            resource_plan["threads_per_sample"] if step == 2 else total_cores
+        )
         run_qc(args)
         if step > 0:   # step 0 has no visualization
             plot_qc(args)
@@ -738,6 +757,10 @@ def build_parser():
     p.add_argument(
         "--json", action="store_true",
         help="Write a machine-readable JSON report to stdout.",
+    )
+    p.add_argument(
+        "--parallel", type=int, default=None, metavar="N",
+        help="Validate a parallel-sample override against the total CPU budget.",
     )
     p.set_defaults(func=_cmd_doctor)
 

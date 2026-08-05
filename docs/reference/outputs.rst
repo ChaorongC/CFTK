@@ -18,6 +18,9 @@ CFTK writes results below ``<output_dir>/results``.
        config/lock/options identity, doctor and tool reports, an immediate
        command-ledger mirror, expected output/figure tables, events, and an
        HTML summary.
+   * - ``provenance/runs/<run-id>/resource-plan.json``
+     - Resolved total CPU budgets, parallel samples, per-sample threads,
+       estimated peak threads, and detected scheduler allocation by stage.
    * - ``provenance/quarantine/<run-id>/``
      - Preserved partial or damaged stage artifacts moved before a safe retry.
    * - ``1_process/1_trimming/``

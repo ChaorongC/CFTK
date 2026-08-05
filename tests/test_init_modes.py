@@ -221,6 +221,19 @@ def test_schema_v2_rejects_invalid_positive_integer_process_settings(
         init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
 
 
+def test_schema_v2_rejects_parallel_samples_above_total_cores(
+    init_module, tmp_path
+):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["process"] = {"cores": 4, "parallel_samples": 5}
+
+    with pytest.raises(SystemExit, match="parallel_samples.*cores"):
+        init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
+
+
 @pytest.mark.parametrize("value", [0, "0g", "8", "eight", "8g;touch bad", True])
 def test_schema_v2_rejects_invalid_picard_java_memory(
     init_module, tmp_path, value

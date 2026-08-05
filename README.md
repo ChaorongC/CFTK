@@ -105,7 +105,9 @@ QC with fail-fast stage boundaries. It validates every required artifact and
 writes an immutable attempt directory under
 `results/provenance/runs/<run-id>/`, including exact commands, tool versions,
 expected outputs and figures, stage states, and `run-summary.html`. Preview the
-plan without tool probes or computation with `cftk run --dry-run`.
+plan without tool probes or computation with `cftk run --dry-run`. Each attempt
+also writes `resource-plan.json`; `process.cores` is the total CPU budget and is
+divided across concurrent sample commands.
 
 Use `cftk doctor` separately for readiness diagnostics or JSON output to CI.
 The individual commands remain available for expert workflows:

@@ -44,7 +44,9 @@ Commands
    ``--step {1,2,3,4}`` accepts one or more space-separated values.
    ``--target-bed PATH`` validates an expert Picard covered-target override;
    ``--skip-picard-metrics`` removes Picard metrics from the required step-3
-   tool checks. ``--json`` writes only machine-readable JSON to stdout.
+   tool checks. ``--parallel N`` validates a parallel-sample override against
+   the configured total CPU budget and detected scheduler allocation.
+   ``--json`` writes only machine-readable JSON to stdout.
 
    Human checks use ``PASS``, ``WARN``, and ``FAIL``. No required failures
    returns exit status 0; one or more failures returns 1; invalid arguments
@@ -68,6 +70,9 @@ Commands
    quarantine before retry. Automatic resume requires a matching config, lock,
    options hash, trusted prior stage state, and currently valid artifacts.
    ``--target-bed PATH`` is an expert one-run Picard target override.
+   ``--parallel N`` sets concurrent samples. CFTK divides the configured total
+   ``process.cores`` budget across those sample commands and records the result
+   in ``resource-plan.json``.
 
    Every attempt writes ``run.json``, event and command JSONL files, doctor and
    tool-version JSON, output/figure TSVs, and ``run-summary.html`` under
