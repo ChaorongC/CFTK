@@ -51,10 +51,11 @@ Sample Sheet Schema
 -------------------
 
 The required columns are ``sample``, ``group``, ``role``, ``input_type``,
-``r1``, ``r2``, and ``bam``. The first release supports exactly two groups and
-requires one ``control`` role and one ``case`` role. FASTQ samples require R1
-and R2; BAM samples require a BAM path. Rows and group insertion order are
-preserved.
+``r1``, ``r2``, and ``bam``. Schema v2 supports one or two groups. A one-group
+project is processing/QC-only and may use a ``control`` or ``case`` role. A
+two-group project requires exactly one ``control`` group and one ``case``
+group. FASTQ samples require R1 and R2; BAM samples require a BAM path. Rows and
+group insertion order are preserved.
 
 Resolved Contract
 -----------------
@@ -63,6 +64,8 @@ CFTK resolves schema v2 internally into the legacy nested keys expected by
 existing commands: ``comparison``, grouped ``samples``, ``reference_data``,
 ``process``, and ``analysis``. The profile ``target_bed`` is used for Picard
 coverage only; it does not filter methylation calling or downstream analyses.
+For a one-group project, ``comparison`` is unset and comparative commands
+require a two-group project rather than inferring or duplicating a group.
 
 Legacy Schema
 -------------

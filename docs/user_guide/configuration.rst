@@ -61,9 +61,12 @@ The repository example is:
    Unique output-safe identifier using letters, digits, ``-``, ``_``, or ``.``.
 
 ``group`` and ``role``
-   This initial schema supports exactly two groups. Exactly one group must have
-   role ``control`` and one must have role ``case``. The explicit roles define
-   model labels 0 and 1; group names are not interpreted.
+   Schema v2 supports one or two groups. A one-group project is valid for
+   processing and QC and may use role ``control`` or ``case``. No biological
+   comparison is inferred for it. A two-group project must have exactly one
+   ``control`` group and one ``case`` group; those explicit roles define model
+   labels 0 and 1, and group names are not interpreted. Comparative commands
+   stop with an actionable error when the project contains only one group.
 
 ``input_type``
    Either ``fastq`` or ``bam``. FASTQ rows require both ``r1`` and ``r2``; BAM

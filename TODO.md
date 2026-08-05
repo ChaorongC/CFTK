@@ -98,6 +98,18 @@ Completion criteria:
   command construction.
 - Interrupted runs resume only from scientifically valid checkpoints.
 
+Deferred reporting optimization:
+
+- [ ] Move the validation-only workflow evidence collector into the installed
+  package and generate its artifact, command, resource, and sanitized QC
+  summaries automatically from ``cftk run``.
+- [ ] Link the generated evidence figures from ``run-summary.html`` for dry,
+  failed, complete, and resumed attempts without rerunning successful
+  bioinformatics stages.
+- [ ] Define and test an explicit terminal state for analysis-complete but
+  evidence-reporting-failed attempts before making the evidence bundle part of
+  the beginner completion contract.
+
 ## 4. Real-Data End-To-End Validation
 
 **Status:** In progress; clean structural end-to-end validation is complete,

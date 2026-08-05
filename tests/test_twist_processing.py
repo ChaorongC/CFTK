@@ -288,6 +288,44 @@ def test_schema_v2_profile_target_is_used_without_cli_override(
     assert seen == [profile_target]
 
 
+def test_process_merges_single_sample_cpg_matrix(
+    process_module, monkeypatch, tmp_path
+):
+    sample = _sample()
+    bedgraph = tmp_path / "sample_1_CpG.bedGraph"
+    bedgraph.write_text("chr1\t0\t2\t50\n")
+    process_config = {
+        "parallel_samples": 1,
+        "step4_methylation": {"params": {"cores": 1}},
+    }
+    config = {
+        "reference_data": {"genome_fa": str(tmp_path / "hg38.fa")},
+        "process": process_config,
+    }
+    paths = {**_paths(tmp_path), "cpg_matrix": str(tmp_path / "matrix")}
+    merged = []
+    monkeypatch.setattr(process_module, "load_config", lambda path: config)
+    monkeypatch.setattr(process_module, "get_work_paths", lambda cfg: paths)
+    monkeypatch.setattr(process_module, "get_all_samples", lambda cfg: [sample])
+    monkeypatch.setitem(
+        process_module._STEP_FN, 4,
+        lambda sample, proc, ref, paths, cores: str(bedgraph),
+    )
+    monkeypatch.setattr(process_module, "_run_multiqc", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        process_module,
+        "_merge_cpg",
+        lambda files, samples, paths: merged.append((files, samples, paths)),
+    )
+
+    process_module.process(
+        SimpleNamespace(step=[4], parallel=1),
+        config_path="single-sample.json",
+    )
+
+    assert merged == [([str(bedgraph)], [sample], paths)]
+
+
 def test_interval_checkpoint_changes_with_target_content(
     process_module, monkeypatch, tmp_path
 ):
@@ -362,5 +400,6 @@ def test_cpg_matrix_uses_one_based_cytosine_for_merged_context(
     )
 
     rows = Path(output).read_text().splitlines()
+    assert rows[0] == "cpg_id\tsample_1"
     assert rows[1].startswith("chr1_25115\t")
     assert rows[2].startswith("chr1_29337\t")

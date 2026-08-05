@@ -15,7 +15,9 @@ From the project directory, run:
 
 The guided setup uses current-directory defaults. It may create ``samples.tsv``
 from unambiguous FASTQ/BAM inputs and stop so you can assign explicit
-``control`` and ``case`` roles. Rerun the same command after editing the sheet.
+``control`` or ``case`` roles. A processing-only project may contain one group;
+a comparative project requires one control group and one case group. Rerun the
+same command after editing the sheet.
 CFTK selects managed mode automatically and installs the pinned
 ``twist_human_methylome_hg38`` profile version ``1.0.0`` under
 ``CFTK_REFERENCE_ROOT`` or ``~/.cache/cftk/references``. Individual reference
