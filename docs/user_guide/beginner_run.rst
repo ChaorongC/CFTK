@@ -67,18 +67,22 @@ summary so ``qc_summary.tsv`` can include its median fragment-length metrics.
 Rendered Stage Examples
 -----------------------
 
-The following are sanitized renders from the validated two-sample workflow.
-They show what a beginner should expect to see; the actual run directory still
-contains the full-resolution reports, tables, and per-sample files listed in
-the stage contract above.
+The following are sanitized renders from **only two preselected example
+samples**: one control and one sALS sample from the deterministic Phase 13
+smoke test. They were not selected by a recorded random-sampling procedure and
+must not be interpreted as representative cohort distributions, biological
+group differences, or acceptance thresholds. They show only what a beginner
+can expect the workflow outputs to look like; the actual run directory contains
+the full-resolution reports, tables, and per-sample files listed in the stage
+contract above.
 
 .. figure:: ../_static/workflow_stage_evidence.png
    :alt: Required output and figure counts for each CFTK workflow stage
    :width: 100%
 
-   The stage-evidence view confirms that every stage has the expected output
-   and figure inventory. ``missing 0`` means the required artifact contract
-   was satisfied for that run.
+   For these two example samples, the stage-evidence view confirms that every
+   stage has the expected output and figure inventory. ``missing 0`` means the
+   required artifact contract was satisfied for this technical run only.
 
 .. figure:: ../_static/workflow_trimming_quality.png
    :alt: Representative FastQC mean quality score plot after trimming
@@ -120,8 +124,9 @@ the stage contract above.
    :width: 70%
 
    ``qc.2`` produces raw fragment-length tables and per-sample/combined
-   fragment-length figures. The mononucleosomal pattern is descriptive and
-   must be interpreted with the other QC outputs.
+   fragment-length figures. These two curves represent individual examples,
+   not control/sALS group distributions. The mononucleosomal pattern is
+   descriptive and must be interpreted with the other QC outputs.
 
 .. figure:: ../_static/workflow_methylation_distribution_example.png
    :alt: Representative methylation distribution plot
@@ -135,9 +140,10 @@ the stage contract above.
    :alt: Sanitized overview of mapped reads, duplicates, methylation coverage, and depth
    :width: 100%
 
-   The run-level QC overview is a screening figure generated from
-   ``qc_summary.tsv``. It does not replace inspection of the underlying tables,
-   M-bias plots, conversion controls, or assay-specific thresholds.
+   The run-level QC overview contains one sample per group and is a screening
+   figure generated from ``qc_summary.tsv``. It does not estimate group
+   behavior or replace inspection of the underlying tables, M-bias plots,
+   conversion controls, or assay-specific thresholds.
 
 .. figure:: ../_static/workflow_resource_plan.png
    :alt: Example CFTK recorded CPU resource plan by stage
