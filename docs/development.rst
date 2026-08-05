@@ -29,6 +29,14 @@ for maintainers and advanced users. They are technical diagnostics, not a
 required beginner step and not a claim that duplicate-marking tools are
 universally interchangeable.
 
+The release-validation helper ``scripts/validation/summarize_workflow_run.py``
+turns a completed (or planned) ``run.json`` into a private artifact inventory,
+stage evidence table, exact-command table, and reviewable figures. Use it when
+preparing a tutorial or release record, and keep its output outside Git. The
+beginner stage contract in :doc:`user_guide/beginner_run` remains the
+authoritative list of required outputs; the helper only checks and visualizes
+that contract.
+
 .. toctree::
    :maxdepth: 1
 
