@@ -33,7 +33,7 @@ import shlex
 import sys
 from pathlib import Path
 from joblib import Parallel, delayed
-from util import disp, run_command
+from util import configure_command_log, disp, recorded_run, run_command
 from init import (
     get_all_samples,
     get_bam,
@@ -62,6 +62,21 @@ SUPPORTED_TOOLS = {
     3: {"sambamba", "picard", "samblaster"},
     4: {"methyldackel", "bismark_extractor"},
 }
+DEFAULT_PICARD_JAVA_MEMORY = "8g"
+_JAVA_MEMORY_RE = re.compile(r"^[1-9][0-9]*[kKmMgGtT]$")
+
+
+def _picard_command(program, java_memory=DEFAULT_PICARD_JAVA_MEMORY):
+    """Return a Picard command prefix with a validated maximum Java heap."""
+    if (
+        not isinstance(java_memory, str)
+        or not _JAVA_MEMORY_RE.fullmatch(java_memory)
+    ):
+        sys.exit(
+            "[process] ERROR: picard_java_memory must use a positive JVM size "
+            "such as '8g' or '4096m'."
+        )
+    return f"picard -Xmx{java_memory.lower()} {program}"
 
 
 # ── Step implementations (single sample) ─────────────────────────────────────
@@ -214,6 +229,9 @@ def _step2_align(sample, r1, r2, step_cfg, ref_data, paths, per_cores):
 def _step3_markdup(sample, bam_in, step_cfg, ref_data, paths, per_cores):
     tool    = step_cfg["tool"]
     extra   = step_cfg["params"].get("extra_args", "")
+    picard_java_memory = step_cfg["params"].get(
+        "picard_java_memory", DEFAULT_PICARD_JAVA_MEMORY
+    )
     ref     = ref_data["genome_fa"]
     name    = sample["name"]
     out     = paths["markdup"]
@@ -231,7 +249,8 @@ def _step3_markdup(sample, bam_in, step_cfg, ref_data, paths, per_cores):
     elif tool == "picard":
         metrics = bam_out.replace(".bam", "_metrics.txt")
         cmd = (
-            f"picard MarkDuplicates I={bam_in} O={bam_out} R={ref} "
+            f"{_picard_command('MarkDuplicates', picard_java_memory)} "
+            f"I={bam_in} O={bam_out} R={ref} "
             f"M={metrics} SORTING_COLLECTION_SIZE_RATIO=0.15 "
             f"ASSUME_SORT_ORDER=coordinate OPTICAL_DUPLICATE_PIXEL_DISTANCE=2500 "
             f"MAX_RECORDS_IN_RAM=1000 {extra} || exit 1; "
@@ -265,7 +284,12 @@ def _resolve_target_bed(target_bed=None):
     return str(candidate.resolve())
 
 
-def _prepare_picard_interval_list(target_bed, reference_fa, paths):
+def _prepare_picard_interval_list(
+    target_bed,
+    reference_fa,
+    paths,
+    picard_java_memory=DEFAULT_PICARD_JAVA_MEMORY,
+):
     """Create the target interval list once for all post-markdup metrics."""
     sequence_dict = get_sequence_dictionary_path(reference_fa)
     if not os.path.isfile(sequence_dict):
@@ -291,14 +315,22 @@ def _prepare_picard_interval_list(target_bed, reference_fa, paths):
         return interval_list
 
     cmd = (
-        f"picard BedToIntervalList I={shlex.quote(target_bed)} "
+        f"{_picard_command('BedToIntervalList', picard_java_memory)} "
+        f"I={shlex.quote(target_bed)} "
         f"O={shlex.quote(interval_list)} SD={shlex.quote(sequence_dict)} || exit 1"
     )
     run_command(cmd, label="picard BedToIntervalList")
     return interval_list
 
 
-def _run_picard_metrics(sample, bam_in, reference_fa, interval_list, paths):
+def _run_picard_metrics(
+    sample,
+    bam_in,
+    reference_fa,
+    interval_list,
+    paths,
+    picard_java_memory=DEFAULT_PICARD_JAVA_MEMORY,
+):
     """Collect Twist target and general Picard performance metrics for a BAM."""
     name = sample["name"]
     metrics_dir = os.path.dirname(interval_list)
@@ -312,7 +344,8 @@ def _run_picard_metrics(sample, bam_in, reference_fa, interval_list, paths):
         disp(f"  [picard] {name} — HsMetrics already present, skipping")
     else:
         cmd = (
-            f"picard CollectHsMetrics I={shlex.quote(bam_in)} "
+            f"{_picard_command('CollectHsMetrics', picard_java_memory)} "
+            f"I={shlex.quote(bam_in)} "
             f"O={shlex.quote(hs_metrics)} R={shlex.quote(reference_fa)} "
             f"BAIT_INTERVALS={shlex.quote(interval_list)} "
             f"TARGET_INTERVALS={shlex.quote(interval_list)} "
@@ -326,7 +359,8 @@ def _run_picard_metrics(sample, bam_in, reference_fa, interval_list, paths):
         disp(f"  [picard] {name} — multiple metrics already present, skipping")
     else:
         cmd = (
-            f"picard CollectMultipleMetrics I={shlex.quote(bam_in)} "
+            f"{_picard_command('CollectMultipleMetrics', picard_java_memory)} "
+            f"I={shlex.quote(bam_in)} "
             f"O={shlex.quote(multiple_prefix)} R={shlex.quote(reference_fa)} "
             f"PROGRAM=CollectGcBiasMetrics "
             f"PROGRAM=CollectInsertSizeMetrics "
@@ -350,10 +384,10 @@ def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
         mbias_txt  = f"{prefix}_mbias.txt"
         mbias_temp = f"{prefix}_mbias_OT_OB.temp"
         # P3a: mbias --txt outputs per-position TSV to stdout; OT/OB coords to stderr.
-        #      Use subprocess.run(capture_output=True) instead of shell redirection
-        #      to avoid run_command() interference with stdout (cat: invalid option --h).
+        #      Capture stdout/stderr instead of using shell redirection so the
+        #      M-bias table and OT/OB bounds remain independently available.
         # run_command() is used for the extract step (no stdout capture needed).
-        import subprocess as _sp, re as _re
+        import re as _re
 
         # Step A: mbias --txt → capture stdout (TSV) and stderr (OT/OB coords)
         mbias_args = [
@@ -362,7 +396,9 @@ def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
             ref, bam_in, prefix,
         ]
         disp(f"  [mbias] {name} — running mbias --txt")
-        mbias_proc = _sp.run(mbias_args, capture_output=True, text=True)
+        mbias_proc = recorded_run(
+            mbias_args, capture_output=True, text=True, label=f"mbias [{name}]"
+        )
 
         # Write stdout (TSV) to _mbias.txt
         with open(mbias_txt, "w") as _f:
@@ -419,7 +455,6 @@ def _step4_methylation(sample, bam_in, step_cfg, ref_data, paths, per_cores):
 
 def _merge_cpg(bedgraph_files, samples, paths):
     import shutil
-    import subprocess
     import pandas as pd
 
     out_dir = paths["cpg_matrix"]
@@ -449,7 +484,7 @@ def _merge_cpg(bedgraph_files, samples, paths):
     )
 
     disp(f"[merge] bedtools unionbedg: {len(bedgraph_files)} files → {out_path}")
-    ret = subprocess.run(cmd, shell=True)
+    ret = recorded_run(cmd, shell=True, label="merge CpG matrix")
     if ret.returncode != 0:
         sys.exit("[merge] ERROR: bedtools unionbedg failed.")
 
@@ -634,8 +669,16 @@ def _run_step3_with_metrics(
     """Run or reuse markdup, then fill any missing Picard metric outputs."""
     bam_out = _run_step3(sample, proc, ref, paths, per_cores)
     if bam_out and os.path.exists(bam_out):
+        picard_java_memory = proc["step3_markdup"]["params"].get(
+            "picard_java_memory", DEFAULT_PICARD_JAVA_MEMORY
+        )
         _run_picard_metrics(
-            sample, bam_out, ref["genome_fa"], interval_list, paths
+            sample,
+            bam_out,
+            ref["genome_fa"],
+            interval_list,
+            paths,
+            picard_java_memory,
         )
     return bam_out
 
@@ -796,6 +839,9 @@ def _run_multiqc(step, paths, samples=None):
 def process(args, config_path="./cftk_init.json"):
     cfg     = load_config(config_path)
     paths   = get_work_paths(cfg)
+    provenance = paths.get("provenance")
+    if provenance:
+        configure_command_log(os.path.join(provenance, "commands.jsonl"))
     samples = get_all_samples(cfg)
     steps   = sorted(set(args.step))
     ref     = cfg["reference_data"]
@@ -821,11 +867,14 @@ def process(args, config_path="./cftk_init.json"):
 
     picard_interval_list = None
     if 3 in steps and not getattr(args, "skip_picard_metrics", False):
+        picard_java_memory = proc["step3_markdup"]["params"].get(
+            "picard_java_memory", DEFAULT_PICARD_JAVA_MEMORY
+        )
         target_bed = _resolve_target_bed(
             getattr(args, "target_bed", None) or ref.get("target_bed")
         )
         picard_interval_list = _prepare_picard_interval_list(
-            target_bed, ref["genome_fa"], paths
+            target_bed, ref["genome_fa"], paths, picard_java_memory
         )
 
     disp(f"Samples          : {len(samples)}")

@@ -108,15 +108,23 @@ cftk --config cftk_init.json process -s 1 2 3 4
 Step 3 also writes Picard target and alignment metrics. Schema-v2 projects use
 the selected profile's covered-target BED. `--target-bed PATH` remains an
 expert one-run override; legacy source checkouts retain the bundled fallback.
+Picard uses an explicit 8 GB maximum Java heap by default; advanced projects
+can tune it with schema-v2 `process.picard_java_memory`.
+
+CFTK appends every external command to
+`<output_dir>/results/provenance/commands.jsonl`. Each command is recorded in
+full before execution and receives a completion record with its exit status.
+This includes reference preparation, raw processing, QC, DMR, and
+fragmentomics commands, including commands launched for parallel samples.
 
 Some workflows require external bioinformatics tools and reference files that
 are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-A fail-safe beginner `cftk run` and complete real-data end-to-end validation
-remain explicit release TODOs. Their prerequisites and completion criteria are
-tracked in [TODO.md](TODO.md).
+A fail-safe beginner `cftk run` and production-grade biological acceptance of
+the real-data workflow remain explicit release TODOs. The completed structural
+smoke validation and remaining criteria are tracked in [TODO.md](TODO.md).
 
 ## Model-Power Calculator
 

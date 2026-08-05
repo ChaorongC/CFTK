@@ -82,6 +82,11 @@ The process command creates standard subdirectories under
 ``<output_dir>/results/1_process`` and merges per-sample CpG calls into
 ``cpg_matrix.tsv`` after successful methylation calling.
 
+Exact external commands are appended to
+``<output_dir>/results/provenance/commands.jsonl`` before execution, followed
+by completion records containing exit status. Keep this ledger with the
+project configuration, lock file, and outputs when archiving an analysis.
+
 5. Run Downstream Analysis
 ---------------------------
 

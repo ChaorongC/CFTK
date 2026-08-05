@@ -143,6 +143,10 @@ def test_schema_v2_resolves_to_legacy_contract(init_module, tmp_path):
     assert config["comparison"] == "Healthy_vs_Disease"
     assert config["group_roles"] == {"Healthy": "control", "Disease": "case"}
     assert config["process"]["step4_methylation"]["params"]["min_depth"] == 10
+    assert (
+        config["process"]["step3_markdup"]["params"]["picard_java_memory"]
+        == "8g"
+    )
     assert config["reference_data"]["target_bed"].endswith("covered_targets.bed")
     assert config["output_dir"] == str(tmp_path.resolve())
 
@@ -185,6 +189,20 @@ def test_schema_v2_rejects_invalid_positive_integer_process_settings(
     raw["process"] = {key: value}
 
     with pytest.raises(SystemExit, match=key):
+        init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
+
+
+@pytest.mark.parametrize("value", [0, "0g", "8", "eight", "8g;touch bad", True])
+def test_schema_v2_rejects_invalid_picard_java_memory(
+    init_module, tmp_path, value
+):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["process"] = {"picard_java_memory": value}
+
+    with pytest.raises(SystemExit, match="picard_java_memory"):
         init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
 
 

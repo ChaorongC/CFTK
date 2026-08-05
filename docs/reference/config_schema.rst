@@ -37,6 +37,8 @@ Schema V2
 ``process``
    Optional compact object with positive integer ``cores``,
    ``parallel_samples``, and ``min_depth`` values. Defaults are 20, 1, and 10.
+   The optional ``picard_java_memory`` value uses JVM size notation such as
+   ``8g`` or ``4096m`` and defaults to ``8g``.
 
 Sample Sheet Schema
 -------------------
