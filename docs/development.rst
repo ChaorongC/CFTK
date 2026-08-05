@@ -13,10 +13,31 @@ remaining release gates are:
 
 - end-to-end validation with approved Twist data and the real external
   bioinformatics toolchain before a production release is tagged; and
-- predefined biological acceptance criteria, including quantified
-  Sambamba-versus-Picard duplicate-marking agreement.
+- internal validation artifacts for the default Sambamba duplicate-marking
+  implementation. These comparisons are not beginner workflow gates.
 
 The pinned managed default profile, local reference profiles, schema-v2 project
 initialization, doctor diagnostics, and manifest-backed beginner workflow are
 available now. Legacy configuration and alternative-tool compatibility remain
 available only through the expert commands.
+
+Internal Validation
+-------------------
+
+The historical cohort audit and Sambamba-versus-Picard comparison are retained
+for maintainers and advanced users. They are technical diagnostics, not a
+required beginner step and not a claim that duplicate-marking tools are
+universally interchangeable.
+
+The release-validation helper ``scripts/validation/summarize_workflow_run.py``
+turns a completed (or planned) ``run.json`` into a private artifact inventory,
+stage evidence table, exact-command table, and reviewable figures. Use it when
+preparing a tutorial or release record, and keep its output outside Git. The
+beginner stage contract in :doc:`user_guide/beginner_run` remains the
+authoritative list of required outputs; the helper only checks and visualizes
+that contract.
+
+.. toctree::
+   :maxdepth: 1
+
+   user_guide/validation_acceptance

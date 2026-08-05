@@ -34,6 +34,11 @@ import sys
 from pathlib import Path
 from joblib import Parallel, delayed
 from util import configure_command_log, disp, recorded_run, run_command
+from resource_planning import (
+    detect_scheduler_allocation,
+    ensure_scheduler_capacity,
+    plan_parallelism,
+)
 from init import (
     get_all_samples,
     get_bam,
@@ -868,23 +873,30 @@ def process(args, config_path="./cftk_init.json"):
     ref     = cfg["reference_data"]
     proc    = cfg["process"]
 
-    parallel = getattr(args, "parallel", None) \
-               or proc.get("parallel_samples", 1)
-    parallel = max(1, int(parallel))
-
-    step_cores = {
-        s: max(1, proc[key]["params"].get("cores", 20) // parallel)
-        for s, key in {
-            1: "step1_trimming",
-            2: "step2_alignment",
-            3: "step3_markdup",
-            4: "step4_methylation",
-        }.items()
+    requested_parallel = getattr(args, "parallel", None) \
+                         or proc.get("parallel_samples", 1)
+    step_keys = {
+        1: "step1_trimming",
+        2: "step2_alignment",
+        3: "step3_markdup",
+        4: "step4_methylation",
     }
 
     invalid = [s for s in steps if s not in STEPS]
     if invalid:
         sys.exit(f"[process] Invalid steps: {invalid}. Valid: {list(STEPS.keys())}")
+
+    step_resources = {}
+    scheduler = detect_scheduler_allocation()
+    try:
+        for step in steps:
+            total = proc[step_keys[step]]["params"].get("cores", 20)
+            ensure_scheduler_capacity(total, scheduler)
+            step_resources[step] = plan_parallelism(
+                total, requested_parallel, len(samples)
+            )
+    except ValueError as exc:
+        sys.exit(f"[process] ERROR: invalid CPU resource plan: {exc}")
 
     picard_interval_list = None
     if 3 in steps and not getattr(args, "skip_picard_metrics", False):
@@ -900,24 +912,25 @@ def process(args, config_path="./cftk_init.json"):
 
     disp(f"Samples          : {len(samples)}")
     disp(f"Steps            : {[STEPS[s] for s in steps]}")
-    disp(f"Parallel samples : {parallel}")
+    disp(f"Parallel samples : {requested_parallel}")
     for s in steps:
-        total = proc[{1: "step1_trimming", 2: "step2_alignment",
-                      3: "step3_markdup",  4: "step4_methylation"}[s]
-                    ]["params"].get("cores", 20)
-        disp(f"  Step {s} cores  : {step_cores[s]} per sample "
-             f"(total {total} ÷ {parallel})")
+        resources = step_resources[s]
+        disp(f"  Step {s} cores  : {resources['threads_per_sample']} per sample "
+             f"({resources['concurrent_samples']} concurrent; total budget "
+             f"{resources['total_core_budget']})")
 
     bedgraph_results = [None] * len(samples)
 
     for step in steps:
+        resources = step_resources[step]
+        parallel = resources["concurrent_samples"]
         sep = "=" * 50
         disp(sep)
         disp(f"[step {step}] {STEPS[step]} — {len(samples)} samples "
              f"(parallel={parallel})")
         disp(sep)
 
-        per_cores = step_cores[step]
+        per_cores = resources["threads_per_sample"]
         if step == 3 and picard_interval_list:
             results = Parallel(n_jobs=parallel, backend="multiprocessing")(
                 delayed(_run_step3_with_metrics)(

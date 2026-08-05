@@ -10,6 +10,7 @@ from scripts.validation.compare_duplicate_marking import (
     compare_sample,
 )
 from scripts.validation.summarize_doctor_audit import summarize
+from scripts.validation.summarize_workflow_run import summarize as summarize_workflow
 
 
 def _doctor_check(sample, name, status, summary=None):
@@ -122,3 +123,60 @@ def test_duplicate_comparison_uses_primary_read_keys_and_downstream_metrics(tmp_
     _write_comparison_figure([result], tmp_path / "comparison.png")
     assert (tmp_path / "comparison.tsv").is_file()
     assert (tmp_path / "comparison.png").stat().st_size > 0
+
+
+def test_workflow_summary_records_artifacts_resources_commands_and_qc_figure(tmp_path):
+    output = tmp_path / "results" / "qc_summary.tsv"
+    output.parent.mkdir(parents=True)
+    output.write_text(
+        "sample\tgroup\tflagstat_mapped_pct\tmarkdup_dup_pct\n"
+        "private_control\tControl\t95\t1.2\n"
+    )
+    manifest_dir = tmp_path / "run"
+    manifest_dir.mkdir()
+    (manifest_dir / "commands.jsonl").write_text(
+        json.dumps({
+            "event": "start", "command_id": "c1", "label": "trim [private_control]",
+            "command": "trim_galore --cores 4", "timestamp": "now",
+        }) + "\n" + json.dumps({
+            "event": "finish", "command_id": "c1", "label": "trim [private_control]",
+            "command": "trim_galore --cores 4", "returncode": 0, "timestamp": "later",
+        }) + "\n"
+    )
+    manifest = {
+        "run_id": "run-1",
+        "status": "complete",
+        "resource_plan": {
+            "stages": [{
+                "stage": "qc.0", "applicable": True, "total_core_budget": 8,
+                "concurrent_samples": 1, "threads_per_sample": 1,
+                "estimated_peak_threads": 1,
+            }]
+        },
+        "stages": [{
+            "id": "qc.0", "name": "QC", "status": "complete",
+            "command": "cftk qc -s 0", "expected": [
+                {"path": str(output), "role": "report", "required": True,
+                 "description": "QC table"},
+                {"path": str(tmp_path / "checkpoint.done"), "role": "output",
+                 "required": True, "nonempty": False, "description": "Checkpoint"},
+                {"path": str(tmp_path / "missing.png"), "role": "figure",
+                 "required": False, "description": "Optional plot"},
+            ]
+        }],
+    }
+    (tmp_path / "checkpoint.done").touch()
+    manifest_path = manifest_dir / "run.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    summary = summarize_workflow(manifest_path, tmp_path / "evidence")
+
+    assert summary["required_artifacts"] == 2
+    assert summary["missing_required_artifacts"] == 0
+    assert summary["command_ledger"]["starts"] == 1
+    assert summary["command_ledger"]["finishes"] == 1
+    assert summary["command_ledger"]["unfinished"] == 0
+    assert (tmp_path / "evidence/workflow_command_evidence.tsv").is_file()
+    assert (tmp_path / "evidence/workflow_stage_evidence.png").stat().st_size > 0
+    assert (tmp_path / "evidence/workflow_resource_plan.png").stat().st_size > 0
+    assert (tmp_path / "evidence/workflow_qc_overview.png").stat().st_size > 0

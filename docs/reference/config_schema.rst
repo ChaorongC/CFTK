@@ -37,6 +37,13 @@ Schema V2
 ``process``
    Optional compact object with positive integer ``cores``,
    ``parallel_samples``, and ``min_depth`` values. Defaults are 20, 1, and 10.
+   ``cores`` is one total workflow CPU budget. Concurrent sample commands
+   receive ``floor(cores / effective_parallel_samples)`` threads each, and
+   ``parallel_samples`` cannot exceed ``cores``. When fewer samples remain than
+   requested, CFTK recalculates the per-sample share from the effective number.
+   Duplicate marking uses ``sambamba`` by default. Advanced users may set
+   ``duplicate_marking_tool`` to ``picard`` or ``samblaster`` when their
+   environment or validation protocol requires it.
    The optional ``picard_java_memory`` value uses JVM size notation such as
    ``8g`` or ``4096m`` and defaults to ``8g``.
 

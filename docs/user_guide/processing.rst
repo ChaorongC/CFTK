@@ -24,8 +24,20 @@ Steps
    ``SM``, and ``LB``.
 
 3. Duplicate marking
-   Uses ``sambamba``, ``picard``, or ``samblaster``. CFTK then runs Picard
+   Uses ``sambamba`` by default. Advanced users may select ``picard`` or
+   ``samblaster`` in the compact configuration. CFTK then runs Picard
    ``CollectHsMetrics`` and ``CollectMultipleMetrics`` on the marked BAM.
+
+   .. code-block:: json
+
+      {
+        "process": {
+          "duplicate_marking_tool": "picard"
+        }
+      }
+
+   This is an explicit implementation choice for an advanced workflow; CFTK
+   does not compare both tools during an ordinary run.
 
 4. CpG methylation calling
    Uses ``MethylDackel`` or ``bismark_methylation_extractor``. The MethylDackel

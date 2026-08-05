@@ -24,6 +24,11 @@ from init import (
     validate_fasta_index,
 )
 from reference_profiles import sha256_file, validate_target_bed
+from resource_planning import (
+    detect_scheduler_allocation,
+    ensure_scheduler_capacity,
+    plan_parallelism,
+)
 
 
 _STEP_KEYS = {
@@ -643,6 +648,45 @@ def _check_output(checks, cfg):
         checks.pass_("output.capacity", f"{free_gib:.1f} GiB free at {probe_dir}")
 
 
+def _check_resources(checks, cfg, steps, parallel_override=None):
+    process = cfg.get("process", {})
+    requested_parallel = parallel_override or process.get("parallel_samples", 1)
+    sample_count = len(get_all_samples(cfg))
+    scheduler = detect_scheduler_allocation()
+    plans = []
+    try:
+        for step in sorted(steps):
+            total = process[_STEP_KEYS[step]].get("params", {}).get("cores", 20)
+            ensure_scheduler_capacity(total, scheduler)
+            plans.append({
+                "step": step,
+                **plan_parallelism(total, requested_parallel, sample_count),
+            })
+    except (KeyError, ValueError) as exc:
+        checks.fail(
+            "resource.cpu_budget",
+            f"Invalid CPU resource plan: {exc}",
+            remedy=(
+                "Set process.cores to the total allocated CPUs and keep "
+                "parallel_samples at or below that budget. Under Slurm, request "
+                "at least the same --cpus-per-task value."
+            ),
+            details={"scheduler": scheduler, "plans": plans},
+        )
+        return
+    allocation = scheduler.get("allocated_cores")
+    allocation_text = (
+        f"; scheduler allocation {allocation} via {scheduler['variable']}"
+        if allocation is not None else "; no scheduler allocation detected"
+    )
+    checks.pass_(
+        "resource.cpu_budget",
+        f"CPU budget is valid for {requested_parallel} parallel sample(s)"
+        f"{allocation_text}",
+        details={"scheduler": scheduler, "plans": plans},
+    )
+
+
 def run_doctor(args):
     """Run all requested diagnostics without acquiring or repairing resources."""
     checks = _Checks()
@@ -679,6 +723,7 @@ def run_doctor(args):
         _check_tools(checks, cfg, steps, getattr(args, "skip_picard_metrics", False))
         _check_inputs(checks, cfg, steps, reference_records)
         _check_output(checks, cfg)
+        _check_resources(checks, cfg, steps, getattr(args, "parallel", None))
     failures = sum(item["status"] == "FAIL" for item in checks.items)
     warnings = sum(item["status"] == "WARN" for item in checks.items)
     status = "FAIL" if failures else ("WARN" if warnings else "PASS")

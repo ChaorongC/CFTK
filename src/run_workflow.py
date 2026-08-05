@@ -14,10 +14,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from init import get_all_samples, get_sequence_dictionary_path, get_work_paths, load_config
+from resource_planning import detect_scheduler_allocation, plan_parallelism
 from util import configure_command_log, disp
 
 
-RUN_SCHEMA_VERSION = 1
+RUN_SCHEMA_VERSION = 2
 DEFAULT_TOOLS = {
     "step1_trimming": "trim_galore",
     "step2_alignment": "bwameth",
@@ -163,6 +164,86 @@ def _build_stage_plan(input_type, include_dinucleotide=False):
             "applicable": True,
         })
     return stages
+
+
+def _build_resource_plan(context, stages, args):
+    process = context["cfg"]["process"]
+    sample_count = len(context["samples"])
+    requested_parallel = args.parallel or process.get("parallel_samples", 1)
+    scheduler = detect_scheduler_allocation()
+    records = []
+    step_keys = {
+        1: "step1_trimming",
+        2: "step2_alignment",
+        3: "step3_markdup",
+        4: "step4_methylation",
+    }
+    try:
+        for stage in stages:
+            if stage["kind"] == "process":
+                total = process[step_keys[stage["step"]]]["params"].get("cores", 20)
+                record = {
+                    "stage": stage["id"],
+                    "model": "parallel samples with per-sample tool threads",
+                    **plan_parallelism(total, requested_parallel, sample_count),
+                }
+            else:
+                total = process["step4_methylation"]["params"].get("cores", 20)
+                sample_plan = plan_parallelism(total, requested_parallel, sample_count)
+                if stage["id"] == "qc.2":
+                    record = {
+                        "stage": stage["id"],
+                        "model": "parallel samples with per-sample tool threads",
+                        **sample_plan,
+                    }
+                elif stage["id"] == "qc.0":
+                    record = {
+                        "stage": stage["id"],
+                        "model": "sample parsing threads",
+                        **sample_plan,
+                        "concurrent_samples": min(total, max(1, sample_count)),
+                        "threads_per_sample": 1,
+                        "estimated_peak_threads": min(total, max(1, sample_count)),
+                    }
+                elif stage["id"] == "qc.3":
+                    record = {
+                        "stage": stage["id"],
+                        "model": "separate sample-extraction and pattern-worker phases",
+                        **sample_plan,
+                        "threads_per_sample": 1,
+                        "pattern_workers": min(total, 8),
+                        "estimated_peak_threads": max(
+                            sample_plan["concurrent_samples"], min(total, 8)
+                        ),
+                    }
+                else:
+                    record = {
+                        "stage": stage["id"],
+                        "model": "single Python plotting process",
+                        **sample_plan,
+                        "concurrent_samples": 1,
+                        "threads_per_sample": 1,
+                        "estimated_peak_threads": 1,
+                    }
+            record["applicable"] = stage["applicable"]
+            records.append(record)
+    except (KeyError, ValueError) as exc:
+        raise RunContractError(f"Invalid CPU resource plan: {exc}") from exc
+
+    maximum = max(
+        (record["total_core_budget"] for record in records if record["applicable"]),
+        default=0,
+    )
+    allocated = scheduler.get("allocated_cores")
+    return {
+        "resource_plan_version": 1,
+        "sample_count": sample_count,
+        "requested_parallel_samples": requested_parallel,
+        "maximum_total_core_budget": maximum,
+        "scheduler": scheduler,
+        "scheduler_compatible": allocated is None or maximum <= allocated,
+        "stages": records,
+    }
 
 
 def _spec(path, description, *, role="output", nonempty=True, required=True):
@@ -341,6 +422,7 @@ def _run_preflight(context, args):
     report = run_doctor(SimpleNamespace(
         config=str(context["config_path"]),
         step=steps,
+        parallel=args.parallel,
         target_bed=args.target_bed,
         skip_picard_metrics=False,
     ))
@@ -509,6 +591,7 @@ def _write_summary_html(manifest, path, project_root=None):
     record_links = []
     for filename, description in (
         ("run.json", "Machine-readable run manifest"),
+        ("resource-plan.json", "Resolved CPU resource plan"),
         ("events.jsonl", "Stage event ledger"),
         ("doctor-before.json", "Preflight doctor report"),
         ("tool-versions.json", "Tool versions"),
@@ -521,6 +604,28 @@ def _write_summary_html(manifest, path, project_root=None):
                 f'<li><a href="{html.escape(filename, quote=True)}">'
                 f"{html.escape(description)}</a></li>"
             )
+    resource_rows = []
+    for resource in manifest.get("resource_plan", {}).get("stages", []):
+        if not resource.get("applicable", True):
+            continue
+        resource_rows.append(
+            "<tr>"
+            f"<td><code>{html.escape(resource['stage'])}</code></td>"
+            f"<td>{resource['total_core_budget']}</td>"
+            f"<td>{resource['concurrent_samples']}</td>"
+            f"<td>{resource['threads_per_sample']}</td>"
+            f"<td>{resource['estimated_peak_threads']}</td>"
+            f"<td>{html.escape(resource['model'])}</td>"
+            "</tr>"
+        )
+    resource_table = (
+        "<h2>CPU resource plan</h2>"
+        "<table><thead><tr><th>Stage</th><th>Total budget</th>"
+        "<th>Concurrent samples</th><th>Threads/sample</th>"
+        "<th>Estimated peak</th><th>Execution model</th></tr></thead><tbody>"
+        f"{''.join(resource_rows)}</tbody></table>"
+        if resource_rows else ""
+    )
     error = manifest.get("error")
     error_block = (
         f'<h2>Terminal error</h2><pre>{html.escape(error)}</pre>' if error else ""
@@ -544,6 +649,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
 <strong>Started:</strong> {html.escape(manifest.get('started_at', ''))}<br>
 <strong>Finished:</strong> {html.escape(manifest.get('finished_at') or 'in progress')}</p>
 {error_block}
+{resource_table}
 <h2>Stages</h2><table><thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <h2>Run records</h2><ul>{''.join(record_links)}</ul>
 <h2>Outputs and figures</h2>{''.join(artifact_sections) or '<p>No completed artifacts recorded.</p>'}
@@ -581,6 +687,9 @@ def _load_previous(provenance, identity=None):
 def _save_attempt(manifest, run_dir, provenance):
     manifest_path = Path(run_dir) / "run.json"
     _atomic_write_json(manifest_path, manifest)
+    _atomic_write_json(Path(run_dir) / "resource-plan.json", manifest.get(
+        "resource_plan", {"status": "NOT_PLANNED"}
+    ))
     _write_summary_html(manifest, Path(run_dir) / "run-summary.html", manifest["project_root"])
     _atomic_write_json(Path(provenance) / "latest-run.json", {
         "run_id": manifest["run_id"],
@@ -626,6 +735,7 @@ def run(args):
         "lock": str(context["lock_path"]),
         "project_identity": identity,
         "options": options,
+        "resource_plan": {"status": "NOT_PLANNED"},
         "previous_run_id": previous.get("run_id") if previous else None,
         "status": "running",
         "started_at": _utc_now(),
@@ -645,11 +755,17 @@ def run(args):
 
     try:
         plan = _build_stage_plan(context["input_type"], args.qc_dinucleotide)
+        manifest["resource_plan"] = _build_resource_plan(context, plan, args)
         for stage in plan:
             specs = _artifact_specs(context, stage, args) if stage["applicable"] else []
+            stage_resources = next(
+                value for value in manifest["resource_plan"]["stages"]
+                if value["stage"] == stage["id"]
+            )
             manifest["stages"].append({
                 **stage,
                 "command": _stage_command(context, stage, args),
+                "resources": stage_resources,
                 "status": "pending" if stage["applicable"] else "skipped",
                 "started_at": None,
                 "finished_at": None,

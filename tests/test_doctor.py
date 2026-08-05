@@ -15,6 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def modules(monkeypatch):
     monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    for variable in (
+        "SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE", "PBS_NP", "NSLOTS",
+    ):
+        monkeypatch.delenv(variable, raising=False)
     import cftk
     import doctor
     import init
@@ -100,6 +104,7 @@ def _args(config, **overrides):
         "target_bed": None,
         "skip_picard_metrics": False,
         "json": True,
+        "parallel": None,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -113,6 +118,7 @@ def test_parser_registers_doctor_with_all_steps_by_default(modules):
     assert args.target_bed is None
     assert not args.skip_picard_metrics
     assert not args.json
+    assert args.parallel is None
     assert '"doctor"' in (REPO_ROOT / "pyproject.toml").read_text()
 
 
@@ -134,6 +140,31 @@ def test_doctor_uses_picard_compatible_version_probe(modules):
         False,
     )
     assert doctor._TOOL_PROBE_TIMEOUT == 60
+
+
+def test_doctor_rejects_scheduler_underallocation(modules, monkeypatch):
+    _, doctor, _ = modules
+    cfg = {
+        "samples": {
+            "Control": [{"name": "control"}],
+            "Case": [{"name": "case"}],
+        },
+        "process": {
+            "parallel_samples": 2,
+            **{
+                key: {"params": {"cores": 20}}
+                for key in doctor._STEP_KEYS.values()
+            },
+        },
+    }
+    checks = doctor._Checks()
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
+
+    doctor._check_resources(checks, cfg, {1, 2, 3, 4})
+
+    assert checks.items[0]["id"] == "resource.cpu_budget"
+    assert checks.items[0]["status"] == "FAIL"
+    assert "scheduler allocation" in checks.items[0]["summary"]
 
 
 def test_doctor_does_not_acquire_an_installed_managed_profile(

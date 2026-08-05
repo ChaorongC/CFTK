@@ -105,7 +105,9 @@ QC with fail-fast stage boundaries. It validates every required artifact and
 writes an immutable attempt directory under
 `results/provenance/runs/<run-id>/`, including exact commands, tool versions,
 expected outputs and figures, stage states, and `run-summary.html`. Preview the
-plan without tool probes or computation with `cftk run --dry-run`.
+plan without tool probes or computation with `cftk run --dry-run`. Each attempt
+also writes `resource-plan.json`; `process.cores` is the total CPU budget and is
+divided across concurrent sample commands.
 
 Use `cftk doctor` separately for readiness diagnostics or JSON output to CI.
 The individual commands remain available for expert workflows:
@@ -132,9 +134,10 @@ are not installed by Python packaging alone. See the documentation for details.
 
 ## Roadmap
 
-The fail-safe beginner `cftk run` is implemented. Clean real-data validation,
-biological acceptance criteria, and Sambamba-versus-Picard agreement remain
-release work tracked in [TODO.md](TODO.md).
+The fail-safe beginner `cftk run` is implemented. Clean real-data validation
+and biological acceptance remain release work tracked in [TODO.md](TODO.md).
+Sambamba is the default duplicate-marking tool; advanced users can select
+Picard explicitly in the schema-v2 process configuration.
 
 ## Model-Power Calculator
 

@@ -113,16 +113,17 @@ the scripted structural assertions. A separate read-only doctor audit covered
 and incomplete-read-group issues.
 
 This establishes real-tool compatibility for the tested path. It does not
-establish biological equivalence, cohort-wide output quality, or
-Sambamba-versus-Picard duplicate-marking agreement.
+establish biological equivalence or cohort-wide output quality. Sambamba is
+the default duplicate-marking implementation; Picard comparison is retained
+as an internal advanced diagnostic only.
 
-Phase 16 now provides the first reproducible technical agreement comparison:
+The internal Phase 16 diagnostic provides a reproducible technical comparison:
 one preserved control and one preserved sALS 5-million-pair alignment were
 processed by both Sambamba and Picard from the same pre-markdup BAM. Structural
 checks passed, duplicate classification agreement was 99.994% for both
 samples, Twist target metrics matched at reported precision, and CpG overlap
-was 100%. This is a strong subset result, but full-depth/cohort acceptance and
-formal thresholds remain open.
+was 100%. This result is retained for maintainers and does not create a
+beginner-facing equivalence gate or change the Sambamba default.
 
 The final beginner-run validation used a clean workflow-profile environment
 and the same deterministic two-sample inputs. Slurm job `55026503` exited zero
@@ -142,8 +143,8 @@ Implementation:
 - Compare commands and key outputs with the Twist technical note, including
   read groups, mapping filters, target metrics, `--mergeContext`, minimum depth,
   and OT/OB handling.
-- Quantify Sambamba-versus-Picard duplicate-marking agreement rather than
-  assuming equivalent output.
+- Keep the default workflow on Sambamba; retain Picard as an explicit advanced
+  `process.duplicate_marking_tool` option and keep any comparison internal.
 - Record runtime, memory, artifact checksums, expected ranges, and any accepted
   version-specific differences.
 
@@ -184,11 +185,11 @@ implementation:
   an optional, non-default MESA classifier and its Linux wheel pulled a large
   NCCL runtime. Keep each extra validated independently as commands and
   numerical libraries evolve.
-- ``--parallel`` controls concurrent samples but does not divide the configured
-  per-sample core count. For example, ``--parallel 2`` with ``process.cores=20``
-  can launch two 20-process ``bamPEFragmentSize`` jobs. Document the allocation
-  formula now, then add an explicit total-core budget or per-sample-core option
-  before calling scheduler resource use beginner-safe.
+- ``process.cores`` is now enforced as one total CPU budget across processing
+  and QC. The run manifest records per-stage allocation, doctor checks detected
+  scheduler capacity, and nested sample/tool parallelism cannot exceed the
+  configured budget. Memory remains site- and tool-dependent and must still be
+  requested explicitly from the scheduler.
 
 ## 6. Conda Distribution
 

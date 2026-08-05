@@ -146,6 +146,9 @@ Every attempt is stored under:
    * - ``commands.jsonl``
      - Immediate mirror of this attempt's exact external command start/finish
        records. The project-wide copy remains ``provenance/commands.jsonl``.
+   * - ``resource-plan.json``
+     - Resolved total CPU budget, concurrent samples, per-sample threads,
+       estimated peak threads, and detected scheduler allocation.
    * - ``expected-outputs.tsv`` / ``figures.tsv``
      - Auditable stage-to-artifact inventories.
    * - ``run-summary.html``
@@ -181,6 +184,63 @@ sample identity or suitability. Investigate library preparation, input type,
 size selection, mapping, duplicates, and contamination when distributions are
 unexpected.
 
+Stepwise Evidence Bundle
+------------------------
+
+For a validation run, create a private evidence bundle after the run finishes.
+This is an audit aid for maintainers and beginners following a tutorial; it
+does not replace the run contract or change any analysis result. From a source
+checkout, point the helper at the recorded manifest:
+
+.. code-block:: bash
+
+   run_json=$(python -c \
+       'import json; print(json.load(open("results/provenance/latest-run.json"))["manifest"])')
+   python scripts/validation/summarize_workflow_run.py \
+       "$run_json" "$(dirname "$run_json")/evidence"
+
+The helper writes private tables and figures beside the attempt. Review the
+tables before sharing them because they contain absolute paths and verbatim
+commands. The figures are safe to use only after confirming that no sample
+identifiers entered a group label or command annotation:
+
+.. list-table:: Evidence files and beginner interpretation
+   :header-rows: 1
+   :widths: 27 43 30
+
+   * - File
+     - What it records
+     - What to check
+   * - ``workflow_stage_evidence.tsv`` / ``workflow_stage_evidence.png``
+     - One row and one bar per process/QC stage, with status, exact stage
+       command, required output/report count, required figure count, and
+       missing-artifact count.
+     - Every required count is present; a ``failed``/``missing`` annotation
+       stops interpretation until that stage is repaired.
+   * - ``workflow_artifact_inventory.tsv``
+     - Every expected BAM, table, report, and figure with required/optional,
+       existence, and nonempty checks.
+     - Required outputs are nonempty and match the stage contract above.
+   * - ``workflow_command_evidence.tsv``
+     - A readable copy of each exact external command start/finish record.
+       The source of truth remains the append-only ``commands.jsonl`` ledger.
+     - Each start has a finish, every finish has return code zero, and the
+       command text contains no secrets.
+   * - ``workflow_resource_plan.png``
+     - Recorded total CPU budget and estimated peak threads for each stage.
+     - Peak threads do not exceed the scheduler allocation or configured
+       total-core budget.
+   * - ``workflow_qc_overview.png``
+     - Sanitized bars for mapped reads, duplicates, CpG depth/coverage,
+       global methylation, and fragment length when those metrics exist.
+     - Treat this as a screening view. Investigate raw tables, M-bias plots,
+       conversion controls, and assay expectations before calling a sample
+       usable.
+
+The collector reports missing artifacts even for a planned dry-run. A planned
+run is useful for checking commands and resource allocation, but it is not
+evidence that the external tools completed.
+
 Running On Slurm
 ----------------
 
@@ -200,9 +260,15 @@ status. For example:
    cd /path/to/project
    cftk run --parallel 2
 
-Choose memory from the actual data and tool settings. Picard's default maximum
-is 8 GB per concurrently processed sample, in addition to BAM processing and
-Python overhead.
+With the default ``process.cores: 20``, this runs at most two sample commands
+at a time and gives each multithreaded tool 10 threads. CFTK records that
+calculation in ``resource-plan.json`` and displays it in ``run-summary.html``.
+If ``SLURM_CPUS_PER_TASK`` is present and smaller than ``process.cores``,
+``cftk doctor`` and the run preflight fail before data processing.
+
+Choose memory from the actual data and tool settings. CPU budgeting does not
+divide memory automatically. Picard's default maximum is 8 GB per concurrently
+processed sample, in addition to BAM processing and Python overhead.
 
 Expert Compatibility Command
 ----------------------------
