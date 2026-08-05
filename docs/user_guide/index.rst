@@ -10,6 +10,7 @@ features, perform differential analysis, model modalities, and generate reports.
 
    configuration
    beginner_run
+   validation_acceptance
    processing
    quality_control
    differential
