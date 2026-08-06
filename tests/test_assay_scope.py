@@ -108,6 +108,7 @@ def test_prepare_scope_derives_regions_bins_and_panel_bam(scope_module, tmp_path
     assert Path(prepared["region_bed"]).is_file()
     assert Path(prepared["bins"]).is_file()
     assert Path(prepared["bam_paths"][0]).is_file()
+    assert Path(prepared["bam_paths"][0]).name == "s1.markdup.bam"
     assert len(calls) == 2
     assert calls[0][0][0:2] == ["samtools", "view"]
     assert calls[1][0][0:2] == ["samtools", "index"]
