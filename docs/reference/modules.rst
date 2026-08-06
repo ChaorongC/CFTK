@@ -16,6 +16,8 @@ Command And Configuration
 - ``src/process.py``: raw processing steps and CpG matrix merge.
 - ``src/run_workflow.py``: fail-fast beginner stage orchestration, artifact
   contracts, resume/quarantine decisions, and per-attempt provenance.
+- ``src/validation_reports.py``: installed evidence tables and sanitized
+  figures generated automatically for terminal beginner-run attempts.
 - ``src/util.py``: shared helpers and exact external-command recording.
 
 Analysis Modules

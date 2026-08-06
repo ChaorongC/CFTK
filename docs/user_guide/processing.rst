@@ -118,6 +118,79 @@ After step 4, CFTK can merge per-sample CpG bedGraph files into:
 The merged matrix is the default input for methylation QC, differential
 analysis, MESA modeling, and report generation.
 
+Expected Outputs By Step
+------------------------
+
+Each processing step leaves both machine-readable files and tool reports in a
+stable subdirectory. The examples below use ``<sample>`` as the sample-sheet
+identifier.
+
+.. list-table:: Processing output contract
+   :header-rows: 1
+   :widths: 18 38 44
+
+   * - Step
+     - Main output location
+     - Representative files
+   * - ``process.1``
+     - ``results/1_process/1_trimming/``
+     - ``<sample>_R1/R2_val_*.fq.gz``, trimming reports, FastQC HTML/ZIP,
+       and ``multiqc/multiqc_report.html``
+   * - ``process.2``
+     - ``results/1_process/2_alignment/``
+     - ``<sample>.bam``, ``<sample>.bam.bai``, ``.flagstat``, ``.stats``, and
+       alignment MultiQC HTML
+   * - ``process.3``
+     - ``results/1_process/3_markdup/``
+     - ``<sample>.markdup.bam``, ``.markdup.bam.bai``, Sambamba metrics, and
+       content-keyed Picard metrics
+   * - ``process.4``
+     - ``results/1_process/4_methylation/``
+     - M-bias table, OT/OB bounds, ``<sample>_CpG.bedGraph``, and strand plots
+   * - merged matrix
+     - ``results/1_process/5_merged_matrix/``
+     - ``cpg_matrix.tsv`` used by QC and downstream analyses
+
+The following are sanitized observed technical examples from **only two
+preselected samples**. They show what each stage's output looks like; they do
+not represent cohort distributions, biological findings, or acceptance
+thresholds.
+
+.. figure:: ../_static/workflow_trimming_quality.png
+   :alt: Sanitized trimming quality example
+   :width: 100%
+
+   ``process.1`` example: FastQC/MultiQC quality evidence accompanies the
+   trimmed FASTQs and text reports.
+
+.. figure:: ../_static/workflow_alignment_mapped_reads.png
+   :alt: Sanitized alignment mapped-read example
+   :width: 100%
+
+   ``process.2`` example: mapped-read evidence accompanies each BAM, index,
+   flagstat, and stats file.
+
+.. figure:: ../_static/workflow_picard_insert_size.png
+   :alt: Sanitized Picard insert-size example
+   :width: 72%
+
+   ``process.3`` example: duplicate-marking and Twist target metrics are
+   retained alongside Picard insert-size, GC-bias, and alignment summaries.
+
+.. figure:: ../_static/workflow_mbias_OT.png
+   :alt: Sanitized OT M-bias example
+   :width: 72%
+
+   ``process.4`` example: M-bias is inspected before the OT/OB bounds are
+   applied to the merged CpG call.
+
+.. figure:: ../_static/workflow_mbias_OB.png
+   :alt: Sanitized OB M-bias example
+   :width: 72%
+
+   The OB view is interpreted together with OT, conversion, depth, and the
+   resulting CpG bedGraph; it is not a stand-alone quality verdict.
+
 Command Provenance
 ------------------
 

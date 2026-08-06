@@ -11,6 +11,7 @@ from scripts.validation.compare_duplicate_marking import (
 )
 from scripts.validation.summarize_doctor_audit import summarize
 from scripts.validation.summarize_workflow_run import summarize as summarize_workflow
+from validation_reports import _qc_display_labels
 
 
 def _doctor_check(sample, name, status, summary=None):
@@ -180,3 +181,18 @@ def test_workflow_summary_records_artifacts_resources_commands_and_qc_figure(tmp
     assert (tmp_path / "evidence/workflow_stage_evidence.png").stat().st_size > 0
     assert (tmp_path / "evidence/workflow_resource_plan.png").stat().st_size > 0
     assert (tmp_path / "evidence/workflow_qc_overview.png").stat().st_size > 0
+    assert "workflow_validation_summary.json" in summary["files"]
+
+
+def test_qc_figure_labels_omit_sample_identifiers():
+    import pandas as pd
+
+    frame = pd.DataFrame({
+        "sample": ["private_control_001", "private_case_002"],
+        "group": ["Control", "sALS"],
+    })
+
+    labels, _ = _qc_display_labels(frame)
+
+    assert labels == ["Control 1", "sALS 1"]
+    assert all("private_" not in label for label in labels)

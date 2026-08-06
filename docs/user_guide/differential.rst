@@ -49,6 +49,37 @@ files are resolved from:
 
    <output_dir>/results/1_process/4_methylation/
 
+Expected Outputs
+----------------
+
+For each selected modality, CFTK writes the feature-level table and PCA
+intermediates under one modality directory:
+
+.. code-block:: text
+
+   results/3_differential/<modality>/
+   |-- differential_result.tsv
+   |-- pca_coordinates.txt
+   |-- pca_variance.txt
+   |-- pca.png / pca.pdf
+   |-- violin.png / violin.pdf
+   `-- heatmap.png / heatmap.pdf
+
+The DMR command adds ``results/3_differential/dmr/metilene_input.bedGraph``,
+``dmr_raw.bed``, ``dmr_annotated.bed``, and the regenerated
+``dmr_volcano.png``/PDF. Run ``vis --mode diff dmr`` after changing inputs if
+the figures need to be regenerated.
+
+.. figure:: ../_static/tutorial_differential_outputs.png
+   :alt: Fixed-seed synthetic PCA, DMR volcano, feature distribution, and heatmap examples
+   :width: 100%
+
+   Fixed-seed **synthetic illustrative output** showing the four visual types
+   associated with differential analysis. It is not derived from the ALS
+   cohort, does not demonstrate a CFTK biological result, and must not be used
+   to choose a cutoff or claim group separation. Use the TSV and text files
+   above for the actual run.
+
 Regenerate Plots
 ----------------
 

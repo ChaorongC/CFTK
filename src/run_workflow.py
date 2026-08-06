@@ -18,7 +18,7 @@ from resource_planning import detect_scheduler_allocation, plan_parallelism
 from util import configure_command_log, disp
 
 
-RUN_SCHEMA_VERSION = 2
+RUN_SCHEMA_VERSION = 3
 DEFAULT_TOOLS = {
     "step1_trimming": "trim_galore",
     "step2_alignment": "bwameth",
@@ -604,6 +604,39 @@ def _write_summary_html(manifest, path, project_root=None):
                 f'<li><a href="{html.escape(filename, quote=True)}">'
                 f"{html.escape(description)}</a></li>"
             )
+    evidence = manifest.get("evidence") or {}
+    evidence_files = []
+    evidence_thumbnails = []
+    evidence_dir = Path(evidence["directory"]) if evidence.get("directory") else None
+    if evidence_dir:
+        for filename in evidence.get("files", []):
+            evidence_path = evidence_dir / filename
+            if not evidence_path.is_file():
+                continue
+            href = _relative_link(evidence_path, link_base)
+            evidence_files.append(
+                f'<li><a href="{html.escape(href, quote=True)}">'
+                f"{html.escape(filename)}</a></li>"
+            )
+            if evidence_path.suffix.lower() in {".png", ".svg", ".jpg", ".jpeg"}:
+                evidence_thumbnails.append(
+                    "<figure>"
+                    f'<a href="{html.escape(href, quote=True)}">'
+                    f'<img loading="lazy" src="{html.escape(href, quote=True)}" '
+                    f'alt="{html.escape(filename, quote=True)}"></a>'
+                    f"<figcaption>{html.escape(filename)}</figcaption>"
+                    "</figure>"
+                )
+    evidence_error = evidence.get("error")
+    evidence_block = ""
+    if evidence:
+        evidence_block = (
+            "<h2>Generated evidence</h2>"
+            f"<p><strong>Status:</strong> {html.escape(evidence.get('status', 'unknown'))}</p>"
+            + (f"<pre>{html.escape(str(evidence_error))}</pre>" if evidence_error else "")
+            + (f"<ul>{''.join(evidence_files)}</ul>" if evidence_files else "")
+            + (f'<div class="figures">{"".join(evidence_thumbnails)}</div>' if evidence_thumbnails else "")
+        )
     resource_rows = []
     for resource in manifest.get("resource_plan", {}).get("stages", []):
         if not resource.get("applicable", True):
@@ -636,7 +669,7 @@ def _write_summary_html(manifest, path, project_root=None):
 <style>
 body{{font-family:Arial,sans-serif;max-width:1100px;margin:32px auto;padding:0 20px;color:#202428}}
 h1{{font-size:28px}} table{{border-collapse:collapse;width:100%}} th,td{{border-bottom:1px solid #d8dde2;padding:9px;text-align:left}}
-.status{{font-weight:700}} .complete,.resumed,.adopted{{color:#167346}} .failed{{color:#b42318}} .planned,.pending{{color:#6b7280}}
+.status{{font-weight:700}} .complete,.resumed,.adopted{{color:#167346}} .complete_with_reporting_error{{color:#9a6700}} .failed{{color:#b42318}} .planned,.pending{{color:#6b7280}}
 code{{font-family:ui-monospace,monospace}} a{{color:#075985}}
 pre{{white-space:pre-wrap;background:#f6f8fa;border:1px solid #d8dde2;padding:12px}}
 .figures{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}}
@@ -652,6 +685,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
 {resource_table}
 <h2>Stages</h2><table><thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <h2>Run records</h2><ul>{''.join(record_links)}</ul>
+{evidence_block}
 <h2>Outputs and figures</h2>{''.join(artifact_sections) or '<p>No completed artifacts recorded.</p>'}
 </body></html>"""
     _atomic_write_text(path, document)
@@ -697,6 +731,63 @@ def _save_attempt(manifest, run_dir, provenance):
         "summary": str((Path(run_dir) / "run-summary.html").resolve()),
         "status": manifest["status"],
     })
+
+
+def _generate_evidence(manifest, run_dir):
+    """Generate the installed evidence bundle for one terminal attempt."""
+    from validation_reports import summarize
+
+    run_dir = Path(run_dir).resolve()
+    evidence_dir = run_dir / "evidence"
+    summary = summarize(run_dir / "run.json", evidence_dir)
+    files = list(summary.get("files", []))
+    return {
+        "status": "complete",
+        "directory": str(evidence_dir),
+        "summary": str(evidence_dir / "workflow_validation_summary.json"),
+        "files": files,
+        "required_artifacts": summary.get("required_artifacts", 0),
+        "missing_required_artifacts": summary.get("missing_required_artifacts", 0),
+    }
+
+
+def _finalize_evidence(manifest, run_dir, provenance, events_path):
+    """Record evidence success/failure without rerunning workflow stages."""
+    run_dir = Path(run_dir).resolve()
+    evidence_dir = run_dir / "evidence"
+    manifest["evidence"] = {
+        "status": "running",
+        "directory": str(evidence_dir),
+        "summary": str(evidence_dir / "workflow_validation_summary.json"),
+        "files": [],
+    }
+    _save_attempt(manifest, run_dir, provenance)
+    try:
+        evidence = _generate_evidence(manifest, run_dir)
+    except Exception as exc:
+        manifest["evidence"] = {
+            "status": "failed",
+            "directory": str(evidence_dir),
+            "summary": str(evidence_dir / "workflow_validation_summary.json"),
+            "files": sorted(path.name for path in evidence_dir.glob("*") if path.is_file())
+            if evidence_dir.is_dir() else [],
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        if manifest.get("status") == "complete":
+            manifest["status"] = "complete_with_reporting_error"
+        _append_event(
+            events_path, "evidence_failed", run_id=manifest["run_id"],
+            error=manifest["evidence"]["error"],
+        )
+        _save_attempt(manifest, run_dir, provenance)
+        return False
+    manifest["evidence"] = evidence
+    _append_event(
+        events_path, "evidence_completed", run_id=manifest["run_id"],
+        files=evidence.get("files", []),
+    )
+    _save_attempt(manifest, run_dir, provenance)
+    return True
 
 
 def run(args):
@@ -782,7 +873,7 @@ def run(args):
         manifest["finished_at"] = _utc_now()
         manifest["error"] = f"{type(exc).__name__}: {exc}"
         _append_event(events_path, "run_failed", run_id=run_id, error=manifest["error"])
-        _save_attempt(manifest, run_dir, provenance)
+        _finalize_evidence(manifest, run_dir, provenance, events_path)
         if isinstance(exc, KeyboardInterrupt):
             raise SystemExit(130) from exc
         raise SystemExit(1) from exc
@@ -801,7 +892,9 @@ def run(args):
         manifest["status"] = "planned"
         manifest["finished_at"] = _utc_now()
         _append_event(events_path, "run_planned", run_id=run_id)
-        _save_attempt(manifest, run_dir, provenance)
+        if not _finalize_evidence(manifest, run_dir, provenance, events_path):
+            disp(f"[run] ERROR: evidence reporting failed; inspect {run_dir / 'run.json'}")
+            raise SystemExit(1)
         disp(f"[run] dry-run plan written: {run_dir / 'run-summary.html'}")
         return manifest
 
@@ -894,7 +987,7 @@ def run(args):
         manifest["finished_at"] = _utc_now()
         manifest["error"] = f"{type(exc).__name__}: {exc}"
         _append_event(events_path, "run_failed", run_id=run_id, error=manifest["error"])
-        _save_attempt(manifest, run_dir, provenance)
+        _finalize_evidence(manifest, run_dir, provenance, events_path)
         if isinstance(exc, KeyboardInterrupt):
             raise SystemExit(130) from exc
         raise SystemExit(1) from exc
@@ -902,6 +995,11 @@ def run(args):
     manifest["status"] = "complete"
     manifest["finished_at"] = _utc_now()
     _append_event(events_path, "run_completed", run_id=run_id)
-    _save_attempt(manifest, run_dir, provenance)
+    if not _finalize_evidence(manifest, run_dir, provenance, events_path):
+        disp(
+            "[run] ERROR: analysis stages completed, but evidence reporting failed; "
+            f"inspect {run_dir / 'run.json'}"
+        )
+        raise SystemExit(2)
     disp(f"[run] complete: {run_dir / 'run-summary.html'}")
     return manifest

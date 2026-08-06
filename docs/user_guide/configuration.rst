@@ -110,6 +110,32 @@ CFTK refuses to overwrite an existing config or sample sheet. Pass
 ``--skip-reference-prep`` only for validation when bwa-meth, ``.fai``, and
 Picard ``.dict`` companions are managed separately.
 
+Expected Outputs
+----------------
+
+After a successful initialization, the project contains the compact settings,
+sample metadata, and portable lock identity below. ``results/`` and its
+provenance records appear when ``cftk run`` starts; the managed reference
+profile remains under the selected reference root rather than being copied
+into every project.
+
+.. code-block:: text
+
+   example_study/
+   |-- cftk_init.json
+   |-- cftk.lock.json
+   |-- samples.tsv
+   `-- results/                         (after cftk run)
+       `-- provenance/runs/<run-id>/
+
+.. figure:: ../_static/tutorial_project_layout.png
+   :alt: Example CFTK project files and one shared Twist reference profile
+   :width: 100%
+
+   Static documentation example of the project/reference boundary. It is a
+   layout illustration, not a copied patient project or a claim that every
+   reference component is created inside the project directory.
+
 Reference Root And Lock
 -----------------------
 

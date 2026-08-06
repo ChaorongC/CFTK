@@ -117,3 +117,30 @@ tail probabilities are required.
 Use ``ci_method='none'`` for fast web calculations. Pooled Wilson and
 hierarchical bootstrap intervals are available when uncertainty estimates are
 required.
+
+Expected Outputs
+----------------
+
+The model-development API returns results in memory; it does not silently
+create a ``results/`` directory. The principal output contract is:
+
+.. code-block:: text
+
+   result["power_curve"]              one row per depth/template/sample size
+   result["replicate_results"]        signal-study diagnostics
+   result["null_replicate_results"]   matched null-calibration diagnostics
+   result["template_summary"]         sampled-template metadata
+   result["run_metadata"]              settings, seeds, and implementation IDs
+
+Callers who need files can export the returned frames explicitly, for example
+with ``result["power_curve"].to_csv("power_curve.tsv", sep="\t")``. The
+figure below is a fixed-seed synthetic rendering of the API's curve and
+replicate diagnostics; it is not a study-design recommendation or a real
+cohort result.
+
+.. figure:: ../_static/tutorial_model_power_api.png
+   :alt: Fixed-seed synthetic model-development power API output
+   :width: 100%
+
+   Synthetic illustrative API output. The actual values depend on the selected
+   reference arrays, templates, seeds, and simulation counts.

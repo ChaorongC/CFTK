@@ -98,17 +98,16 @@ Completion criteria:
   command construction.
 - Interrupted runs resume only from scientifically valid checkpoints.
 
-Deferred reporting optimization:
+Reporting integration:
 
-- [ ] Move the validation-only workflow evidence collector into the installed
-  package and generate its artifact, command, resource, and sanitized QC
-  summaries automatically from ``cftk run``.
-- [ ] Link the generated evidence figures from ``run-summary.html`` for dry,
+- [x] Move the workflow evidence collector into the installed package and
+  generate artifact, command, resource, and sanitized QC summaries from
+  ``cftk run``.
+- [x] Link generated evidence figures from ``run-summary.html`` for dry,
   failed, complete, and resumed attempts without rerunning successful
   bioinformatics stages.
-- [ ] Define and test an explicit terminal state for analysis-complete but
-  evidence-reporting-failed attempts before making the evidence bundle part of
-  the beginner completion contract.
+- [x] Define and test ``complete_with_reporting_error`` for analysis-complete
+  attempts whose evidence generation fails; a later run rebuilds evidence only.
 
 ## 4. Real-Data End-To-End Validation
 
