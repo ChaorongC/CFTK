@@ -325,6 +325,40 @@ def test_delfi_uses_planned_cores_for_finaletoolkit_workers(monkeypatch, tmp_pat
     ]
 
 
+def test_occupancy_runs_a_danpos_executable_without_python_prefix(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from analysis import occupancy
+
+    bam = tmp_path / "sample.markdup.bam"
+    bam.touch()
+    commands = []
+    monkeypatch.setattr(
+        occupancy,
+        "run_command",
+        lambda command, label: commands.append((command, label)),
+    )
+    args = SimpleNamespace(
+        occ_out=str(tmp_path / "occupancy"),
+        chrom_sizes="hg38.chrom.sizes",
+        region="regions.bed",
+        danpos="danpos",
+        danpos_extra="--paired 1",
+        parallel=1,
+        infile=[str(bam)],
+    )
+
+    occupancy.run_occupancy(args)
+
+    assert commands == [(
+        f"danpos dpos {bam} --paired 1 -o {tmp_path / 'occupancy' / 'danpos_tmp_sample'} && "
+        f"wigToBigWig -clip {tmp_path / 'occupancy' / 'danpos_tmp_sample' / 'pooled' / 'sample.markdup.Fnor.smooth.wig'} "
+        f"hg38.chrom.sizes {tmp_path / 'occupancy' / 'sample.bw'} && "
+        f"bigWigAverageOverBed {tmp_path / 'occupancy' / 'sample.bw'} regions.bed "
+        f"{tmp_path / 'occupancy' / 'sample.occupancy.tsv'} || exit 1",
+        "occupancy [sample]",
+    )]
+
+
 def test_differential_stage_receives_the_planned_cpu_budget(modules, tmp_path):
     analysis_workflow, _ = modules
     context = _context(tmp_path)

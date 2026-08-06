@@ -19,6 +19,7 @@ def run_occupancy(args):
     chrom_sz   = args.chrom_sizes
     region_bed = args.region
     tool       = getattr(args, "danpos",       "danpos.py")
+    tool_cmd   = f"python {tool}" if tool.endswith(".py") else tool
     extra      = getattr(args, "danpos_extra", "--paired 1 -u 0 -c 1000000")
     workers    = getattr(args, "parallel",     1) or 1
     os.makedirs(out_dir, exist_ok=True)
@@ -38,7 +39,7 @@ def run_occupancy(args):
         wig = os.path.join(danpos_tmp, "pooled", f"{stem}.Fnor.smooth.wig")
         bw  = os.path.join(out_dir, f"{name}.bw")
         cmd = (
-            f"python {tool} dpos {bam} {extra} -o {danpos_tmp} && "
+            f"{tool_cmd} dpos {bam} {extra} -o {danpos_tmp} && "
             f"wigToBigWig -clip {wig} {chrom_sz} {bw} && "
             f"bigWigAverageOverBed {bw} {region_bed} {occ} || exit 1"
         )
