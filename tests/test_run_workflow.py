@@ -269,10 +269,24 @@ def test_dry_run_writes_immutable_plan_without_executing_stages(
     assert (run_dir / "expected-outputs.tsv").is_file()
     assert (run_dir / "figures.tsv").is_file()
     assert (run_dir / "run-summary.html").is_file()
+    assert manifest["evidence"]["status"] == "complete"
+    evidence = run_dir / "evidence"
+    for filename in (
+        "workflow_artifact_inventory.tsv",
+        "workflow_stage_evidence.tsv",
+        "workflow_command_evidence.tsv",
+        "workflow_stage_evidence.png",
+        "workflow_resource_plan.png",
+        "workflow_validation_summary.json",
+    ):
+        assert (evidence / filename).is_file()
     resources = json.loads((run_dir / "resource-plan.json").read_text())
     assert resources["maximum_total_core_budget"] == 20
     assert resources["stages"][0]["threads_per_sample"] == 20
-    assert "CPU resource plan" in (run_dir / "run-summary.html").read_text()
+    summary_html = (run_dir / "run-summary.html").read_text()
+    assert "CPU resource plan" in summary_html
+    assert "Generated evidence" in summary_html
+    assert "evidence/workflow_stage_evidence.png" in summary_html
 
 
 def test_stage_failure_stops_downstream_and_records_terminal_status(
@@ -320,6 +334,8 @@ def test_stage_failure_stops_downstream_and_records_terminal_status(
     assert manifest["status"] == "failed"
     assert manifest["stages"][1]["status"] == "failed"
     assert manifest["stages"][2]["status"] == "pending"
+    assert manifest["evidence"]["status"] == "complete"
+    assert (Path(manifest["run_dir"]) / "evidence/workflow_stage_evidence.png").is_file()
 
 
 def test_planning_failure_still_records_a_terminal_attempt(
@@ -354,6 +370,8 @@ def test_planning_failure_still_records_a_terminal_attempt(
     assert "Terminal error" in summary
     assert "missing target BED" in summary
     assert "Machine-readable run manifest" in summary
+    assert manifest["evidence"]["status"] == "complete"
+    assert (run_dir / "evidence/workflow_stage_evidence.png").is_file()
 
 
 def test_interruption_is_recorded_and_returns_shell_interrupt_status(
@@ -382,6 +400,7 @@ def test_interruption_is_recorded_and_returns_shell_interrupt_status(
     manifest = json.loads(Path(latest["manifest"]).read_text())
     assert manifest["status"] == "interrupted"
     assert manifest["stages"][0]["status"] == "interrupted"
+    assert manifest["evidence"]["status"] == "complete"
 
 
 def test_complete_run_is_automatically_resumed_from_valid_manifest(
@@ -418,6 +437,7 @@ def test_complete_run_is_automatically_resumed_from_valid_manifest(
     first = run_workflow.run(_args(str(context["config_path"])))
     assert first["status"] == "complete"
     assert [stage["status"] for stage in first["stages"]] == ["complete"] * 7
+    assert first["evidence"]["status"] == "complete"
 
     calls.clear()
     second = run_workflow.run(_args(str(context["config_path"])))
@@ -425,6 +445,61 @@ def test_complete_run_is_automatically_resumed_from_valid_manifest(
     assert calls == []
     assert [stage["status"] for stage in second["stages"]] == ["resumed"] * 7
     assert second["previous_run_id"] == first["run_id"]
+    assert second["evidence"]["status"] == "complete"
+
+
+def test_reporting_failure_is_distinct_and_resume_rebuilds_only_evidence(
+    modules, tmp_path, monkeypatch
+):
+    _, run_workflow = modules
+    context = _context(tmp_path, run_workflow)
+    calls = []
+    monkeypatch.setattr(run_workflow, "_load_context", lambda args: context)
+    monkeypatch.setattr(run_workflow, "_run_preflight", lambda *args: {
+        "report_version": 1, "status": "PASS", "exit_code": 0,
+        "summary": {"pass": 1, "warn": 0, "fail": 0}, "checks": [],
+    })
+
+    def artifacts(context, stage, args):
+        return [{
+            "path": str(tmp_path / f"{stage['id']}.txt"),
+            "role": "output", "required": True, "nonempty": True,
+            "description": stage["id"],
+        }]
+
+    def execute(context, stage, args):
+        calls.append(stage["id"])
+        Path(artifacts(context, stage, args)[0]["path"]).write_text("done\n")
+
+    monkeypatch.setattr(run_workflow, "_artifact_specs", artifacts)
+    monkeypatch.setattr(run_workflow, "_execute_stage", execute)
+    original_generate = run_workflow._generate_evidence
+    monkeypatch.setattr(
+        run_workflow, "_generate_evidence",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("report renderer failed")),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        run_workflow.run(_args(str(context["config_path"])))
+
+    assert exc.value.code == 2
+    assert calls == [stage["id"] for stage in run_workflow._build_stage_plan("fastq")]
+    latest = json.loads(
+        (Path(context["paths"]["provenance"]) / "latest-run.json").read_text()
+    )
+    failed_report = json.loads(Path(latest["manifest"]).read_text())
+    assert failed_report["status"] == "complete_with_reporting_error"
+    assert failed_report["evidence"]["status"] == "failed"
+    assert "report renderer failed" in failed_report["evidence"]["error"]
+
+    monkeypatch.setattr(run_workflow, "_generate_evidence", original_generate)
+    calls.clear()
+    resumed = run_workflow.run(_args(str(context["config_path"])))
+
+    assert resumed["status"] == "complete"
+    assert resumed["evidence"]["status"] == "complete"
+    assert calls == []
+    assert [stage["status"] for stage in resumed["stages"]] == ["resumed"] * 7
 
 
 def test_damaged_trusted_checkpoint_is_quarantined_and_rebuilt(
@@ -544,11 +619,18 @@ def test_summary_html_links_recorded_outputs_and_figures(modules, tmp_path):
     _, run_workflow = modules
     output = tmp_path / "results/output.tsv"
     figure = tmp_path / "results/figure.png"
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    (evidence_dir / "workflow_stage_evidence.png").write_bytes(b"png")
     manifest = {
         "run_id": "run-1",
         "status": "complete",
         "started_at": "2026-08-04T00:00:00+00:00",
         "finished_at": "2026-08-04T00:01:00+00:00",
+        "evidence": {
+            "status": "complete", "directory": str(evidence_dir),
+            "files": ["workflow_stage_evidence.png"],
+        },
         "stages": [{
             "id": "qc.1", "name": "Methylation QC", "status": "complete",
             "outputs": [{"path": str(output), "description": "QC table"}],
@@ -565,6 +647,8 @@ def test_summary_html_links_recorded_outputs_and_figures(modules, tmp_path):
     assert "results/output.tsv" in html
     assert "results/figure.png" in html
     assert '<img loading="lazy" src="results/figure.png"' in html
+    assert "Generated evidence" in html
+    assert 'src="evidence/workflow_stage_evidence.png"' in html
 
 
 def test_summary_links_are_relative_to_nested_attempt_directory(modules, tmp_path):
@@ -592,6 +676,8 @@ def test_environment_and_package_register_beginner_run_dependencies():
     pyproject = (root / "pyproject.toml").read_text()
     required_dependencies = pyproject.split("[project.optional-dependencies]", 1)[0]
     assert '"run_workflow"' in pyproject
+    assert '"validation_reports"' in pyproject
+    assert (root / "src/validation_reports.py").is_file()
     for dependency in (
         "numpy", "pandas", "scipy", "matplotlib", "seaborn", "joblib", "pysam",
     ):

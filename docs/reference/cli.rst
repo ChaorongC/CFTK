@@ -76,7 +76,12 @@ Commands
 
    Every attempt writes ``run.json``, event and command JSONL files, doctor and
    tool-version JSON, output/figure TSVs, and ``run-summary.html`` under
-   ``results/provenance/runs/<run-id>/``. See
+   ``results/provenance/runs/<run-id>/``. It also generates an ``evidence/``
+   directory containing stage/artifact/command tables and sanitized figure
+   previews. If analysis completes but evidence reporting fails, the manifest
+   status is ``complete_with_reporting_error`` and the command returns a
+   distinct nonzero status; a subsequent run can rebuild evidence without
+   rerunning valid stages. See
    :doc:`../user_guide/beginner_run` for the full contract.
 
 ``process``
