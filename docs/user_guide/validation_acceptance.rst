@@ -184,3 +184,28 @@ interchangeable for every library, that the historical 40-sample cohort is
 ready, or that a biomarker is biologically valid. Keep the raw reports,
 figures, commands, tool versions, input hashes, and any accepted deviations
 together before calling the default workflow production-ready.
+
+Expected Outputs
+----------------
+
+The validation steps leave an auditable bundle rather than only a pass/fail
+sentence:
+
+.. code-block:: text
+
+   validation/audit/
+   |-- cohort_readiness_checks.tsv
+   |-- cohort_readiness.tsv
+   |-- cohort_readiness_summary.json
+   `-- cohort_readiness.png
+
+   validation/duplicate_compare/
+   |-- commands.trace
+   |-- comparison_manifest.tsv
+   |-- duplicate_marking_comparison.json
+   |-- duplicate_marking_comparison.tsv
+   `-- metrics/ and methylation/ reports
+
+The figures and raw tables are descriptive records for the selected technical
+subset. They are not a user-facing acceptance gate, and they do not replace
+independent biological or clinical validation.

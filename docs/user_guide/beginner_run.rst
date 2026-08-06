@@ -64,6 +64,15 @@ summary so ``qc_summary.tsv`` can include its median fragment-length metrics.
      - Inspect methylation distribution
      - Methylation-distribution PNG and PDF.
 
+Expected Outputs
+----------------
+
+The stage contract above is the beginner checklist: do not move to the next
+stage until its required files and figures are present in the run manifest.
+The full output inventory is also written to ``expected-outputs.tsv`` and
+``figures.tsv`` under the attempt directory, so the checklist can be reviewed
+without guessing filenames.
+
 Full-Depth 10-Sample Technical Validation
 -----------------------------------------
 
@@ -319,7 +328,13 @@ Every attempt is stored under:
    * - ``expected-outputs.tsv`` / ``figures.tsv``
      - Auditable stage-to-artifact inventories.
    * - ``run-summary.html``
-     - Portable human summary with relative output links and image previews.
+     - Portable human summary with relative output links, stage image previews,
+       and links to the generated evidence bundle.
+   * - ``evidence/``
+     - Automatically generated stage, artifact, command, resource, and
+       sanitized QC evidence for this attempt. Tables may contain private paths
+       and commands; the PNG figures use group/order labels instead of sample
+       identifiers.
 
 ``results/provenance/latest-run.json`` points to the newest attempt for
 convenience. Prior attempt directories are retained. Archive the project JSON,
@@ -351,13 +366,26 @@ sample identity or suitability. Investigate library preparation, input type,
 size selection, mapping, duplicates, and contamination when distributions are
 unexpected.
 
-Stepwise Evidence Bundle
-------------------------
+Automatic Stepwise Evidence Bundle
+----------------------------------
 
-For a validation run, create a private evidence bundle after the run finishes.
-This is an audit aid for maintainers and beginners following a tutorial; it
-does not replace the run contract or change any analysis result. From a source
-checkout, point the helper at the recorded manifest:
+Every ``cftk run`` attempt generates a private evidence bundle automatically
+after it reaches a terminal state: ``planned``, ``failed``, ``interrupted``,
+``complete``, or ``complete_with_reporting_error``. Evidence generation does
+not rerun a completed workflow stage.
+The bundle is written under:
+
+.. code-block:: text
+
+   results/provenance/runs/<run-id>/evidence/
+
+The run summary links the generated tables and previews the available PNG
+figures. Raw tables contain absolute paths and exact commands, so keep them
+with the private project archive. The displayed QC figure labels use group and
+order (for example ``Control 1``) rather than sample identifiers.
+
+For a historical manifest created before automatic evidence reporting, the
+source-checkout helper remains available:
 
 .. code-block:: bash
 
@@ -366,10 +394,10 @@ checkout, point the helper at the recorded manifest:
    python scripts/validation/summarize_workflow_run.py \
        "$run_json" "$(dirname "$run_json")/evidence"
 
-The helper writes private tables and figures beside the attempt. Review the
-tables before sharing them because they contain absolute paths and verbatim
-commands. The figures are safe to use only after confirming that no sample
-identifiers entered a group label or command annotation:
+The helper writes the same private tables and figures beside the attempt.
+Review tables before sharing them because they contain absolute paths and
+verbatim commands. The figures are safe to use only after confirming that no
+sample identifiers entered a group label or command annotation:
 
 .. list-table:: Evidence files and beginner interpretation
    :header-rows: 1
@@ -403,10 +431,18 @@ identifiers entered a group label or command annotation:
      - Treat this as a screening view. Investigate raw tables, M-bias plots,
        conversion controls, and assay expectations before calling a sample
        usable.
+   * - ``workflow_validation_summary.json``
+     - Machine-readable evidence-generation status, artifact counts, resource
+       figure status, QC figure status, and command-ledger completeness.
+     - ``missing_required_artifacts`` is zero for a complete workflow; a
+       reporting failure is recorded separately from the stage result.
 
 The collector reports missing artifacts even for a planned dry-run. A planned
 run is useful for checking commands and resource allocation, but it is not
-evidence that the external tools completed.
+evidence that the external tools completed. If analysis stages complete but
+evidence generation fails, ``run.json`` uses
+``complete_with_reporting_error`` and ``cftk run`` returns a distinct nonzero
+status; rerunning then rebuilds the evidence without rerunning valid stages.
 
 Running On Slurm
 ----------------

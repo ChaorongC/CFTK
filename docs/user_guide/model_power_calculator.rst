@@ -178,3 +178,27 @@ null-calibration replicates, and a settings JSON file. The settings export
 includes user inputs, the selected power definition, null-simulation count,
 precision mode, deterministic seeds, and fixed computation settings needed to
 reproduce the calculation.
+
+Expected Outputs
+----------------
+
+Each completed calculator run can be downloaded directly from the app:
+
+.. code-block:: text
+
+   cftk_model_power_curve.csv
+   cftk_model_power_signal_replicates.csv
+   cftk_model_power_null_replicates.csv
+   cftk_model_power_settings.json
+
+The curve preview below is a fixed-seed synthetic example of the three metrics
+shown by the calculator. It is included to make the output contract visible
+before a beginner launches Streamlit; it is not generated from the repository
+reference arrays and is not evidence for any proposed sample size.
+
+.. figure:: ../_static/tutorial_model_power_calculator.png
+   :alt: Fixed-seed synthetic model-power calculator curve
+   :width: 100%
+
+   Synthetic illustrative calculator output: detection power, target
+   attainment, and their joint probability of success are distinct curves.
