@@ -231,6 +231,7 @@ def _default_analysis(samples, control_group, case_group):
             "samples": dmr_samples,
         },
         "frag": {
+            "scope": "auto",
             "occupancy": {"tool": "danpos", "params": {"extra_args": "--paired 1 -u 0 -c 1000000"}},
             "wps": {"params": {"wps_window": 120, "wps_step": 10, "min_frag": 100, "max_frag": 220}},
             "delfi": {"tool": "finaletoolkit", "params": {"mapq": 30, "window": 20, "extra_args": ""}},
@@ -307,6 +308,11 @@ def resolve_schema_v2(
         sys.exit(f"[init] ERROR: schema-v2 config is missing fields: {missing}.")
     assay = raw.get("assay", DEFAULT_ASSAY)
     genome = raw.get("genome", DEFAULT_GENOME)
+    fragmentomics_scope = raw.get("fragmentomics_scope", "auto")
+    if fragmentomics_scope not in ("auto", "panel", "genome"):
+        sys.exit(
+            "[init] ERROR: fragmentomics_scope must be one of auto, panel, or genome."
+        )
     sample_sheet = _resolve_relative(raw["samples"], config_dir)
     sample_data = load_sample_sheet(sample_sheet)
     profile = resolve_reference_profile(
@@ -391,6 +397,8 @@ def resolve_schema_v2(
     output_dir = _resolve_relative(raw.get("output_dir", "."), config_dir)
     control_group = sample_data["control_group"]
     case_group = sample_data["case_group"]
+    analysis = _default_analysis(sample_data["samples"], control_group, case_group)
+    analysis["frag"]["scope"] = fragmentomics_scope
     cfg = {
         "schema_version": SCHEMA_VERSION,
         "project_name": raw["project_name"],
@@ -408,7 +416,7 @@ def resolve_schema_v2(
         "reference_profile": {"id": profile["profile_id"], "version": profile["version"]},
         "reference_data": reference_data,
         "process": process,
-        "analysis": _default_analysis(sample_data["samples"], control_group, case_group),
+        "analysis": analysis,
     }
     return cfg
 

@@ -184,6 +184,43 @@ def test_workflow_summary_records_artifacts_resources_commands_and_qc_figure(tmp
     assert "workflow_validation_summary.json" in summary["files"]
 
 
+def test_workflow_summary_records_fragmentomics_scope(tmp_path):
+    manifest_dir = tmp_path / "run"
+    manifest_dir.mkdir()
+    scope_path = tmp_path / "results/4_fragmentomics/delfi/fragmentomics_scope.json"
+    scope_path.parent.mkdir(parents=True)
+    scope_path.write_text(json.dumps({
+        "resolved_scope": {
+            "mode": "panel",
+            "target_sha256": "target-hash",
+            "bins_count": 7,
+            "note": "panel-only DELFI",
+        }
+    }))
+    manifest = {
+        "run_id": "run-scope",
+        "status": "complete",
+        "fragmentomics_scope": {"mode": "panel"},
+        "stages": [{
+            "id": "fragmentomics.delfi",
+            "status": "complete",
+            "expected": [{
+                "path": str(scope_path),
+                "role": "metadata",
+                "required": True,
+                "description": "scope",
+            }],
+        }],
+    }
+    manifest_path = manifest_dir / "run.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    summary = summarize_workflow(manifest_path, tmp_path / "evidence")
+
+    assert summary["fragmentomics_scope"]["target_sha256"] == "target-hash"
+    assert summary["fragmentomics_scope"]["bins_count"] == 7
+
+
 def test_qc_figure_labels_omit_sample_identifiers():
     import pandas as pd
 

@@ -669,6 +669,48 @@ def test_summary_links_are_relative_to_nested_attempt_directory(modules, tmp_pat
     assert 'href="../../../2_qc/qc_summary.tsv"' in html_path.read_text()
 
 
+def test_summary_html_expands_fragmentomics_scope_details(modules, tmp_path):
+    _, run_workflow = modules
+    scope_path = tmp_path / "results/4_fragmentomics/wps/fragmentomics_scope.json"
+    scope_path.parent.mkdir(parents=True)
+    scope_path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "stage": "wps",
+            "resolved_scope": {
+                "mode": "panel",
+                "target_bed": "/refs/twist_targets.bed",
+                "target_sha256": "abc123",
+                "region_count": 12,
+                "note": "panel-only WPS",
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "run_id": "run-scope",
+        "status": "complete",
+        "started_at": "now",
+        "finished_at": "now",
+        "fragmentomics_scope": {"mode": "panel", "note": "panel-only WPS"},
+        "stages": [{
+            "id": "fragmentomics.wps", "name": "WPS", "status": "complete",
+            "expected": [{"path": str(scope_path), "description": "scope metadata", "role": "metadata"}],
+            "outputs": [], "figures": [],
+        }],
+    }
+    html_path = tmp_path / "run-summary.html"
+
+    run_workflow._write_summary_html(manifest, html_path, tmp_path)
+
+    html = html_path.read_text(encoding="utf-8")
+    assert "Target BED" in html
+    assert "/refs/twist_targets.bed" in html
+    assert "abc123" in html
+    assert "12" in html
+    assert "Interpretation" in html
+
+
 def test_environment_and_package_register_beginner_run_dependencies():
     root = Path(__file__).resolve().parents[1]
 

@@ -34,6 +34,13 @@ Schema V2
    A profile ID string or an object containing ``id`` and optional ``version``.
    When version is omitted, exactly one installed version must exist.
 
+``fragmentomics_scope``
+   Optional advanced fragmentomics scope: ``auto``, ``panel``, or ``genome``.
+   ``auto`` selects panel-overlapping reads and regions for the default Twist
+   Human Methylome targeted assay and genome-wide inputs for other assays.
+   ``panel`` is useful for a custom capture profile; ``genome`` is an expert
+   override and should be used only with validated whole-genome inputs.
+
 ``process``
    Optional compact object with positive integer ``cores``,
    ``parallel_samples``, and ``min_depth`` values. Defaults are 20, 1, and 10.
@@ -63,7 +70,9 @@ Resolved Contract
 CFTK resolves schema v2 internally into the legacy nested keys expected by
 existing commands: ``comparison``, grouped ``samples``, ``reference_data``,
 ``process``, and ``analysis``. The profile ``target_bed`` is used for Picard
-coverage only; it does not filter methylation calling or downstream analyses.
+coverage. For WPS, occupancy, and DELFI, the default Twist ``auto`` scope also
+uses it to restrict reads and reported intervals to panel overlap; it does not
+filter methylation calling or other downstream analyses.
 For a one-group project, ``comparison`` is unset and comparative commands
 require a two-group project rather than inferring or duplicating a group.
 

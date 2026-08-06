@@ -47,6 +47,50 @@ Run occupancy and DELFI:
 
    cftk --config cftk_init.json frag --occupancy --delfi
 
+Assay-Aware Scope
+-----------------
+
+The default Twist Human Methylome profile is targeted. In ``auto`` mode, CFTK
+uses the covered-target BED to make panel-read BAMs for WPS, occupancy, and
+DELFI, clips the WPS/occupancy region BED, and clips the DELFI bins. The
+derived files and exact ``samtools`` commands are kept under
+``results/4_fragmentomics/_scope/<scope-id>/`` and recorded in the command
+ledger. These are panel-restricted features and must not be interpreted as
+genome-wide WPS, occupancy, or the original genome-wide DELFI score.
+Each scoped output directory also contains
+``fragmentomics_scope.json``. It is the beginner-facing record of the resolved
+mode, target BED and checksum, clipped interval counts, input signatures, and
+the interpretation warning:
+
+.. code-block:: bash
+
+   python -m json.tool results/4_fragmentomics/wps/fragmentomics_scope.json
+
+The command prints the same scope note before running. The historical DELFI
+figure filename contains ``_genome`` for compatibility; its title includes the
+resolved scope and it must not be read as proof of genome-wide coverage.
+
+Inspect the resolved choice before running:
+
+.. code-block:: bash
+
+   cftk --config cftk_init.json plan --preset fragmentomics
+   cftk --config cftk_init.json analyze --preset fragmentomics --dry-run
+
+For a custom targeted profile, select panel scope explicitly. For a validated
+whole-genome project, the advanced override is explicit and appears in the
+provenance manifest:
+
+.. code-block:: bash
+
+   cftk --config cftk_init.json frag --wps --fragmentomics-scope panel
+   cftk --config cftk_init.json analyze --preset fragmentomics \
+      --fragmentomics-scope genome
+
+End-motif and cleavage commands retain their existing inputs; the automatic
+panel restriction described here applies specifically to WPS, occupancy, and
+DELFI.
+
 Reference Inputs
 ----------------
 
@@ -80,13 +124,17 @@ command for modalities that return per-sample tables.
      - Directory
    * - occupancy
      - ``<sample>.occupancy.tsv``, ``<sample>.bw``, and
-       ``occupancy_matrix.tsv`` for multi-sample runs
+       ``occupancy_matrix.tsv`` for multi-sample runs, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/occupancy/``
    * - WPS
-     - ``<sample>.wps.tsv`` and ``wps_matrix.tsv`` for multi-sample runs
+     - ``<sample>.wps.tsv`` and ``wps_matrix.tsv`` for multi-sample runs, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/wps/``
    * - DELFI
-     - ``<sample>_delfi.tsv``; merge to ``delfi_matrix.tsv`` when needed
+     - ``<sample>_delfi.tsv`` (the historical companion figure name contains
+       ``_genome``); merge to ``delfi_matrix.tsv`` when needed, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/delfi/``
    * - end motif
      - ``<sample>_<kmer>mer.tsv``

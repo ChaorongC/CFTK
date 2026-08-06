@@ -26,6 +26,13 @@ CFTK writes results below ``<output_dir>/results``.
        figures for every terminal ``cftk run`` attempt. Tables may contain
        private absolute paths and verbatim commands; do not commit them. The
        source-checkout helper remains available for historical manifests.
+   * - ``provenance/analysis-plans/<plan-id>/``
+     - Read-only downstream dependency, input, role, resource, and output
+       plan written by ``cftk plan``.
+   * - ``provenance/analysis-runs/<run-id>/``
+     - Immutable downstream-analysis attempt containing the selected preset,
+       doctor preflight, artifact/figure contracts, command mirror, resource
+       plan, evidence bundle, and HTML summary.
    * - ``provenance/quarantine/<run-id>/``
      - Preserved partial or damaged stage artifacts moved before a safe retry.
    * - ``1_process/1_trimming/``
@@ -45,15 +52,19 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``3_differential/``
      - Differential, PCA, heatmap, violin, and DMR outputs.
    * - ``4_fragmentomics/occupancy/``
-     - Occupancy features.
+     - Occupancy features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/wps/``
-     - WPS features.
+     - WPS features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/delfi/``
-     - DELFI-style features.
+     - DELFI-style features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/end_motif/``
      - End motif features.
    * - ``4_fragmentomics/cleavage/``
      - Cleavage features.
+   * - ``4_fragmentomics/_scope/<scope-id>/``
+     - Deterministic targeted-fragmentomics intermediates: clipped panel
+       regions/bins, panel-read BAMs and indexes, and ``scope.json``. These
+       files document the panel limitation and are required for resume.
    * - ``5_mesa/``
      - MESA performance, model, and LOOCV outputs.
    * - ``report/``

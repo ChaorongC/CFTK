@@ -30,10 +30,10 @@ def _load(args):
         if cg and ag:
             cfg["comparison"] = f"{cg}_vs_{ag}"
         else:
-            raise KeyError(
-                "Config must have 'comparison' (e.g. 'Control_vs_sALS') "
-                "or both 'control_group' and 'case_group'."
-            )
+            # Descriptive workflows (QC, fragmentomics, reporting, and merge)
+            # are valid for a one-group project. Comparative handlers call
+            # get_group_names themselves and retain their focused error.
+            cfg["comparison"] = None
     paths = get_work_paths(cfg)
     configure_command_log(os.path.join(paths["provenance"], "commands.jsonl"))
     return cfg, paths
@@ -70,6 +70,21 @@ def _cmd_doctor(args):
 def _cmd_run(args):
     from run_workflow import run
     return run(args)
+
+
+def _cmd_plan(args):
+    from analysis_workflow import plan
+    return plan(args)
+
+
+def _cmd_analyze(args):
+    import json
+    from analysis_workflow import run
+
+    manifest = run(args)
+    if getattr(args, "json", False):
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+    return manifest
 
 
 def _cmd_process(args):
@@ -241,22 +256,42 @@ def _resolve_bedgraphs(cfg, paths, group_name, selected_names=None):
 
 
 def _cmd_frag(args):
-    from init import get_all_samples, get_bam, get_group_names
+    from init import get_all_samples, get_bam
+    from resource_planning import (
+        detect_scheduler_allocation,
+        ensure_scheduler_capacity,
+        plan_parallelism,
+    )
     from analysis.delfi import run_delfi
     from analysis.end_motif import run_end_motif
     from analysis.cleavage import run_cleavage
     from analysis.wps import run_wps
     from analysis.occupancy import run_occupancy
+    from analysis.assay_scope import ScopeError, prepare_scope, write_scope_metadata
     from visualization.visualization import plot_fragmentomics
 
     cfg, paths = _load(args)
     ref        = cfg["reference_data"]
     frag_cfg   = _p(cfg, "analysis", "frag", default={})
 
-    args.infile   = [get_bam(s, paths) for s in get_all_samples(cfg)]
-    args.cores    = _p(cfg, "process", "step3_markdup", "params", "cores", default=20)
-    args.parallel = getattr(args, "parallel", None) or \
-                    _p(cfg, "process", "parallel_samples", default=1)
+    all_samples = get_all_samples(cfg)
+    original_infile = [get_bam(s, paths) for s in all_samples]
+    args.infile = list(original_infile)
+    total_cores = _p(
+        cfg, "process", "step3_markdup", "params", "cores", default=20
+    )
+    requested_parallel = getattr(args, "parallel", None) or _p(
+        cfg, "process", "parallel_samples", default=1
+    )
+    try:
+        ensure_scheduler_capacity(total_cores, detect_scheduler_allocation())
+        resource_plan = plan_parallelism(
+            total_cores, requested_parallel, len(all_samples)
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[frag] ERROR: invalid CPU resource plan: {exc}") from exc
+    args.cores = resource_plan["threads_per_sample"]
+    args.parallel = resource_plan["concurrent_samples"]
 
     args.chrom_sizes = ref.get("chrom_sizes", "")
     args.genome2bit  = ref.get("genome_2bit", "")
@@ -297,6 +332,10 @@ def _cmd_frag(args):
     args.cl_mapq    = _pf("cleavage", "mapq",       default=30)
     args.cl_extra   = _pf("cleavage", "extra_args", default="")
 
+    requested_scope = getattr(args, "fragmentomics_scope", None) or _p(
+        frag_cfg, "scope", default="auto"
+    )
+
     run_all = not any([
         getattr(args, "occupancy",  False),
         getattr(args, "wps",        False),
@@ -305,32 +344,73 @@ def _cmd_frag(args):
         getattr(args, "cleavage",   False),
     ])
 
-    ga, gb = get_group_names(cfg)
     args.group_labels = {
-        ga: [s["name"] for s in cfg["samples"].get(ga, [])],
-        gb: [s["name"] for s in cfg["samples"].get(gb, [])],
+        group: [s["name"] for s in members]
+        for group, members in cfg.get("samples", {}).items()
     }
 
+    selected_kinds = {
+        kind
+        for kind, enabled in (
+            ("occupancy", run_all or getattr(args, "occupancy", False)),
+            ("wps", run_all or getattr(args, "wps", False)),
+            ("delfi", run_all or getattr(args, "delfi", False)),
+        )
+        if enabled
+    }
+    try:
+        scope = prepare_scope(
+            cfg,
+            paths,
+            all_samples,
+            original_infile,
+            requested=requested_scope,
+            cores=args.cores,
+            kinds=selected_kinds,
+        ) if selected_kinds else {
+            "info": {"requested": requested_scope, "mode": "not_applied"},
+            "bam_paths": original_infile,
+            "region_bed": args.region,
+            "bins": args.bins,
+        }
+    except ScopeError as exc:
+        raise SystemExit(f"[frag] ERROR: {exc}") from exc
+    args.fragmentomics_scope = requested_scope
+    args.scope_info = scope["info"]
+    if selected_kinds:
+        print(
+            f"[frag] scope={scope['info'].get('mode', 'unknown')}: "
+            f"{scope['info'].get('note', '')}",
+            file=sys.stderr,
+        )
+
+    def _run_stage(kind, function, output_dir, plot_mode):
+        saved = (args.infile, args.region, args.bins)
+        if kind in selected_kinds and scope["info"].get("mode") == "panel":
+            args.infile = scope["bam_paths"]
+            if kind in {"occupancy", "wps"}:
+                args.region = scope["region_bed"]
+            if kind == "delfi":
+                args.bins = scope["bins"]
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            if kind in selected_kinds:
+                write_scope_metadata(paths, kind, scope["info"])
+            function(args)
+            plot_fragmentomics(args, mode=plot_mode)
+        finally:
+            args.infile, args.region, args.bins = saved
+
     if run_all or getattr(args, "occupancy", False):
-        os.makedirs(paths["occ_out"], exist_ok=True)
-        run_occupancy(args)
-        plot_fragmentomics(args, mode="occupancy")
+        _run_stage("occupancy", run_occupancy, paths["occ_out"], "occupancy")
     if run_all or getattr(args, "wps", False):
-        os.makedirs(paths["wps_out"], exist_ok=True)
-        run_wps(args)
-        plot_fragmentomics(args, mode="wps")
+        _run_stage("wps", run_wps, paths["wps_out"], "wps")
     if run_all or getattr(args, "delfi", False):
-        os.makedirs(paths["delfi_out"], exist_ok=True)
-        run_delfi(args)
-        plot_fragmentomics(args, mode="delfi")
+        _run_stage("delfi", run_delfi, paths["delfi_out"], "delfi")
     if run_all or getattr(args, "end_motif", False):
-        os.makedirs(paths["end_motif_out"], exist_ok=True)
-        run_end_motif(args)
-        plot_fragmentomics(args, mode="end_motif")
+        _run_stage("end_motif", run_end_motif, paths["end_motif_out"], "end_motif")
     if run_all or getattr(args, "cleavage", False):
-        os.makedirs(paths["cleavage_out"], exist_ok=True)
-        run_cleavage(args)
-        plot_fragmentomics(args, mode="cleavage")
+        _run_stage("cleavage", run_cleavage, paths["cleavage_out"], "cleavage")
 
 
 def _cmd_mesa(args):
@@ -381,22 +461,17 @@ def _make_label(cfg, paths):
     ga, gb = get_group_names(cfg)
 
     group_roles = cfg.get("group_roles", {})
-    if group_roles:
-        if group_roles.get(ga) != "control" or group_roles.get(gb) != "case":
-            sys.exit(
-                "[label] ERROR: comparison order must be control_vs_case when "
-                "explicit group_roles are provided."
-            )
-        label_a, label_b = 0, 1
-    else:
-        _disease_kw = ("als", "cancer", "disease", "tumor", "case", "patient",
-                       "mut", "ad", "pd", "ms", "hd", "treatment", "case")
-        ga_is_disease = any(kw in ga.lower() for kw in _disease_kw)
-        gb_is_disease = any(kw in gb.lower() for kw in _disease_kw)
-        if ga_is_disease and not gb_is_disease:
-            label_a, label_b = 1, 0
-        else:
-            label_a, label_b = 0, 1
+    if not group_roles:
+        sys.exit(
+            "[label] ERROR: MESA requires explicit control/case roles in the "
+            "schema-v2 sample sheet; group-name heuristics are not supported."
+        )
+    if group_roles.get(ga) != "control" or group_roles.get(gb) != "case":
+        sys.exit(
+            "[label] ERROR: comparison order must be control_vs_case when "
+            "explicit group_roles are provided."
+        )
+    label_a, label_b = 0, 1
 
     rows = [(s["name"], label_a) for s in cfg["samples"].get(ga, [])] + \
            [(s["name"], label_b) for s in cfg["samples"].get(gb, [])]
@@ -408,17 +483,16 @@ def _make_label(cfg, paths):
 
 
 def _cmd_report(args):
-    from init import get_group_names
     from report.report_generator import generate_report
 
     cfg, paths = _load(args)
-    ga, gb = get_group_names(cfg)
     os.makedirs(paths["report"], exist_ok=True)
 
     args.results_dir  = paths["results"]
     args.output_dir   = paths["report"]
     args.project_name = cfg.get("project_name", "cftk_project")
-    args.groups       = [ga, gb]
+    args.groups       = list(cfg.get("samples", {}).keys())
+    args.resolved_config = cfg
     if not hasattr(args, "config"):
         args.config = "./cftk_init.json"
 
@@ -439,7 +513,7 @@ def _cmd_merge(args):
 
 
 def _cmd_vis(args):
-    from init import get_group_names, get_all_samples, get_matrix_path
+    from init import get_all_samples, get_matrix_path
     from visualization.visualization import (
         plot_qc, plot_differential, plot_dmr,
         plot_fragmentomics, plot_mesa, plot_power,
@@ -447,7 +521,11 @@ def _cmd_vis(args):
     from util import disp
 
     cfg, paths = _load(args)
-    ga, gb     = get_group_names(cfg)
+    comparison = cfg.get("comparison")
+    if isinstance(comparison, str) and "_vs_" in comparison:
+        ga, gb = comparison.split("_vs_", 1)
+    else:
+        ga = gb = None
     diff_p     = _p(cfg, "analysis", "diff",  "params", default={})
     dmr_p      = _p(cfg, "analysis", "dmr",   "params", default={})
     frag_cfg   = _p(cfg, "analysis", "frag",  default={})
@@ -457,8 +535,8 @@ def _cmd_vis(args):
         modes = ["power", "qc", "diff", "dmr", "frag", "mesa"]
 
     group_labels = {
-        ga: [s["name"] for s in cfg["samples"].get(ga, [])],
-        gb: [s["name"] for s in cfg["samples"].get(gb, [])],
+        group: [s["name"] for s in members]
+        for group, members in cfg.get("samples", {}).items()
     }
 
     def _pf(sub, key, default=None):
@@ -487,6 +565,8 @@ def _cmd_vis(args):
             plot_qc(args)
 
     if "diff" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: differential visualization requires explicit control/case groups.")
         modalities = diff_p.get("modalities", ["cpg"])
         for mod in modalities:
             matrix = get_matrix_path(paths, mod)
@@ -504,6 +584,8 @@ def _cmd_vis(args):
             plot_differential(args)
 
     if "dmr" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: DMR visualization requires explicit control/case groups.")
         dmr_out = os.path.join(paths["differential"], "dmr")
         ann_bed = os.path.join(dmr_out, "dmr_annotated.bed")
         if not os.path.exists(ann_bed):
@@ -534,6 +616,8 @@ def _cmd_vis(args):
             plot_fragmentomics(args, mode=mode)
 
     if "mesa" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: MESA visualization requires explicit control/case groups.")
         pred_tsv = os.path.join(paths["mesa"], "loocv_predictions.tsv")
         if not os.path.exists(pred_tsv):
             disp("[vis] mesa: loocv_predictions.tsv not found, skipping.")
@@ -761,6 +845,20 @@ def build_parser():
         "--parallel", type=int, default=None, metavar="N",
         help="Validate a parallel-sample override against the total CPU budget.",
     )
+    p.add_argument(
+        "--analysis-preset", choices=("auto", "descriptive", "differential", "dmr",
+                                       "fragmentomics", "mesa", "comparative", "all", "report"),
+        default=None,
+        help="Also check a downstream analysis preset (read-only).",
+    )
+    p.add_argument(
+        "--analysis-stage", dest="analysis_stages", nargs="+", default=None,
+        help="Also check explicit downstream stage IDs or aliases.",
+    )
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI reads and regions (default: assay-aware auto).",
+    )
     p.set_defaults(func=_cmd_doctor)
 
     # beginner run
@@ -783,6 +881,47 @@ def build_parser():
         help="Also run the expensive dinucleotide-frequency QC stage.",
     )
     p.set_defaults(func=_cmd_run)
+
+    # downstream planning and analysis
+    p = sub.add_parser(
+        "plan",
+        help="Plan downstream analyses, dependencies, resources, and outputs without running them.",
+    )
+    p.add_argument(
+        "--preset",
+        choices=("auto", "descriptive", "differential", "dmr", "fragmentomics",
+                 "mesa", "comparative", "all", "report"),
+        default="auto",
+    )
+    p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
+    p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
+    p.add_argument("--json", action="store_true", help="Write only the machine-readable plan to stdout.")
+    p.set_defaults(func=_cmd_plan)
+
+    p = sub.add_parser(
+        "analyze",
+        help="Run role-aware downstream analyses with preflight, checkpoints, provenance, and evidence.",
+    )
+    p.add_argument(
+        "--preset",
+        choices=("auto", "descriptive", "differential", "dmr", "fragmentomics",
+                 "mesa", "comparative", "all", "report"),
+        default="auto",
+    )
+    p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
+    p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
+    p.add_argument("--dry-run", action="store_true", help="Write the downstream plan and evidence without executing stages.")
+    p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
+    p.add_argument("--json", action="store_true", help="Write the final manifest as JSON after completion.")
+    p.set_defaults(func=_cmd_analyze)
 
     # process
     p = sub.add_parser("process",
@@ -845,6 +984,10 @@ def build_parser():
     p.add_argument("--delfi",     action="store_true")
     p.add_argument("--end-motif", dest="end_motif", action="store_true")
     p.add_argument("--cleavage",  action="store_true")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
     p.set_defaults(func=_cmd_frag)
 
     # mesa

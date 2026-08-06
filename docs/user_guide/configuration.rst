@@ -158,3 +158,16 @@ Legacy configs continue to expose ``comparison``, nested ``samples``,
 ``reference_data``, ``process``, and ``analysis``. The repository-root
 ``cftk_init.json`` remains the complete legacy example. New projects should use
 schema v2 because it avoids repeating file paths and tool defaults.
+
+Advanced Fragmentomics Scope
+----------------------------
+
+The default Twist Human Methylome profile is a targeted panel. CFTK therefore
+uses ``fragmentomics_scope: auto`` for WPS, occupancy, and DELFI: it creates
+panel-overlap regions and panel-read BAMs under
+``results/4_fragmentomics/_scope/``. Those
+outputs are panel-restricted, not genome-wide measurements. A custom targeted
+profile can opt in with ``fragmentomics_scope: panel``; a validated whole-genome
+project can override this with ``fragmentomics_scope: genome``. The equivalent
+one-run CLI override is ``--fragmentomics-scope genome`` on ``cftk frag``,
+``cftk plan``, or ``cftk analyze``.

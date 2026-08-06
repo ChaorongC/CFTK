@@ -202,6 +202,19 @@ implementation:
   configured budget. Memory remains site- and tool-dependent and must still be
   requested explicitly from the scheduler.
 
+- The role-aware downstream workflow foundation is implemented through
+  ``cftk plan`` and ``cftk analyze``. It records plans, preflight checks,
+  stage contracts, provenance, evidence, and safe resume for differential,
+  DMR, fragmentomics, MESA, and reporting stages. The current scientific
+  implementations remain unchanged: the feature-level Mann-Whitney
+  differential route and metilene-based DMR route still need a separate
+  method audit before they can be presented as a covariate-adjusted biomarker
+  workflow.
+- For the default Twist targeted assay, WPS, occupancy, and DELFI now run in
+  panel-overlap scope by default. Their outputs are not genome-wide measures;
+  whole-genome use requires an explicit validated override. Biological
+  performance validation of these panel-restricted features remains open.
+
 ## 6. Conda Distribution
 
 **Status:** TODO; the current two-step source installation is accepted and

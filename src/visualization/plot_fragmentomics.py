@@ -26,10 +26,14 @@ def _clean_header(df):
     return df
 
 
+def _scope_suffix(scope_mode):
+    return f" [{scope_mode} scope]" if scope_mode else ""
+
+
 # ── Nucleosome occupancy ──────────────────────────────────────────────────────
 
-def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4)):
-    """Genome-wide nucleosome occupancy score line plot from DANPOS3 output."""
+def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4), scope_mode=None):
+    """Nucleosome occupancy score line plot for the supplied regions."""
     df = pd.read_csv(tsv_path, sep="\t", header=None,
                      names=["chrom", "start", "end", "name", "size",
                             "mean0", "mean", "max", "summit"])
@@ -75,7 +79,7 @@ def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4)):
                        fontsize=7)
     ax.set_xlabel("Chromosome")
     ax.set_ylabel("Occupancy Score")
-    ax.set_title(f"{Path(tsv_path).stem} — Nucleosome Occupancy")
+    ax.set_title(f"{Path(tsv_path).stem} — Nucleosome Occupancy{_scope_suffix(scope_mode)}")
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
     fig.tight_layout()
@@ -85,8 +89,8 @@ def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4)):
 # ── DELFI ─────────────────────────────────────────────────────────────────────
 
 def plot_delfi(tsv_path, png_path, pdf_path,
-               use_corrected=True, figsize=(20, 4), ylim=None):
-    """Genome-wide DELFI score line plot."""
+               use_corrected=True, figsize=(20, 4), ylim=None, scope_mode=None):
+    """DELFI score line plot for the supplied bins."""
     with open(tsv_path) as f:
         first = f.readline()
     df = pd.read_csv(tsv_path, sep="\t")
@@ -134,7 +138,7 @@ def plot_delfi(tsv_path, png_path, pdf_path,
                        fontsize=7)
     ax.set_xlabel("Chromosome")
     ax.set_ylabel("DELFI Score")
-    ax.set_title(f"{Path(tsv_path).stem} — DELFI Score")
+    ax.set_title(f"{Path(tsv_path).stem} — DELFI Score{_scope_suffix(scope_mode)}")
     if ylim:
         ax.set_ylim(*ylim)
     ax.spines[["top", "right"]].set_visible(False)
@@ -234,8 +238,8 @@ def plot_cleavage(bw_paths, bed_path, png_path, pdf_path,
 
 # ── WPS ───────────────────────────────────────────────────────────────────────
 
-def plot_wps(tsv_path, png_path, pdf_path, figsize=(14, 4)):
-    """Mean WPS per region, plotted genome-wide."""
+def plot_wps(tsv_path, png_path, pdf_path, figsize=(14, 4), scope_mode=None):
+    """Mean WPS per supplied region."""
     df = pd.read_csv(tsv_path, sep="\t")
     if "mean_WPS" not in df.columns:
         print(f"[plot_wps] mean_WPS column not found in {tsv_path}, skipping.")
@@ -278,7 +282,7 @@ def plot_wps(tsv_path, png_path, pdf_path, figsize=(14, 4)):
                        fontsize=7)
     ax.set_xlabel("Chromosome")
     ax.set_ylabel("Mean WPS")
-    ax.set_title(f"{Path(tsv_path).stem} — WPS")
+    ax.set_title(f"{Path(tsv_path).stem} — WPS{_scope_suffix(scope_mode)}")
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
     fig.tight_layout()

@@ -11,6 +11,7 @@
     "id": "twist_human_methylome_hg38",
     "version": "1.0.0"
   },
+  "fragmentomics_scope": "auto",
   "process": {
     "cores": 20,
     "parallel_samples": 1,

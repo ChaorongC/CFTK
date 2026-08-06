@@ -158,6 +158,12 @@ Picard ``CollectHsMetrics``. Legacy source checkouts retain the bundled
 fallback. ``process --target-bed PATH`` is an expert one-run override, and
 ``--skip-picard-metrics`` explicitly disables these metrics.
 
+For the default Twist targeted assay, the same ``target_bed`` also scopes WPS,
+occupancy, and DELFI to panel-overlapping reads and intervals in ``auto`` mode.
+Those outputs are panel-restricted rather than genome-wide; use the explicit
+``--fragmentomics-scope genome`` override only with validated whole-genome
+inputs.
+
 User-Supplied Files
 -------------------
 
