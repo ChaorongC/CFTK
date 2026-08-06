@@ -79,3 +79,43 @@ def test_qc_step2_receives_per_sample_share_of_total_budget(monkeypatch, tmp_pat
     ))
 
     assert calls == [(2, 10, 2), (0, 20, 2)]
+
+
+def test_qc_accepts_one_group_processing_project(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend("src")
+    import cftk
+    import init
+    from analysis import qc
+    from visualization import visualization
+
+    cfg = {
+        "comparison": None,
+        "samples": {
+            "Control": [{"name": "control", "group": "Control"}],
+        },
+        "process": {
+            "parallel_samples": 1,
+            "step4_methylation": {"params": {"cores": 20}},
+        },
+        "analysis": {"qc": {"params": {}}},
+        "reference_data": {"genome_fa": str(tmp_path / "reference.fa")},
+    }
+    paths = {
+        "qc": str(tmp_path / "qc"),
+        "cpg_matrix": str(tmp_path / "matrix"),
+    }
+    calls = []
+    monkeypatch.setattr(cftk, "_load", lambda args: (cfg, paths))
+    monkeypatch.setattr(init, "get_bam", lambda sample, paths: f"{sample['name']}.bam")
+    monkeypatch.setattr(
+        qc,
+        "run_qc",
+        lambda args: calls.append((args.step, args.cores, args.parallel, args.group_labels)),
+    )
+    monkeypatch.setattr(visualization, "plot_qc", lambda args: None)
+
+    cftk._cmd_qc(SimpleNamespace(
+        config="unused.json", step=[2], parallel=None, force=False, title=None
+    ))
+
+    assert calls == [(2, 20, 1, {"Control": ["control"]})]

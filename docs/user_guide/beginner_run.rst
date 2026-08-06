@@ -64,8 +64,86 @@ summary so ``qc_summary.tsv`` can include its median fragment-length metrics.
      - Inspect methylation distribution
      - Methylation-distribution PNG and PDF.
 
-Rendered Stage Examples
------------------------
+Full-Depth 10-Sample Technical Validation
+-----------------------------------------
+
+The figures below come from a completed full-depth run of **10 preselected
+technical samples: 5 controls and 5 sALS samples**. Before computation, CFTK
+selected the minimum, first quartile, median, third quartile, and maximum paired
+compressed FASTQ sizes within each group. This deterministic size-spanning
+selection was **not random** and was not based on workflow results.
+
+This subset tests execution, checkpoint recovery, artifact contracts, and
+expected output appearance across varied input sizes. It is not a cohort-wide
+biological analysis, evidence that the selected samples represent either
+population, or a source of clinical or scientific acceptance thresholds. No
+sample was filtered from the displayed results.
+
+The final validation summary reported:
+
+.. code-block:: text
+
+   samples:                         10 (5 control, 5 sALS)
+   validated stage records:        70 (7 per sample)
+   required artifacts:             410
+   missing required artifacts:     0
+   combined CpG matrix:             5,970,802 rows x 10 samples
+   zero-command resume checks:     10 of 10 passed
+
+.. figure:: ../_static/validation_10sample_stage_evidence.png
+   :alt: Required output and figure counts across seven stages for ten full-depth samples
+   :width: 100%
+
+   This is the output contract for all seven default stages. Bars total the
+   required output/report and figure files across all ten isolated projects;
+   every counted artifact was present when aggregation completed.
+
+.. figure:: ../_static/validation_10sample_process_metrics.png
+   :alt: Trimming, alignment, duplicate, and CpG coverage metrics for ten full-depth samples
+   :width: 100%
+
+   ``process.1`` through ``process.4`` are represented directly by retained
+   bases, mapped reads, duplicate reads, and covered CpG sites. These panels
+   show expected per-sample outputs, not pass/fail cutoffs or group tests.
+
+.. figure:: ../_static/validation_10sample_qc_overview.png
+   :alt: Sanitized QC overview for five control and five sALS technical samples
+   :width: 100%
+
+   ``qc.0`` combines selected trimming, alignment, methylation, and fragment
+   metrics. Median fragment length is populated for all ten samples. The
+   composite score uses the configured default weights and is not a release,
+   biological, or clinical acceptance decision.
+
+.. figure:: ../_static/validation_10sample_methylation_distribution.png
+   :alt: CpG methylation distributions for ten full-depth technical samples
+   :width: 85%
+
+   ``process.4`` produced the CpG values and ``qc.1`` rendered their
+   distributions. Thin lines are individual technical samples and thick lines
+   are group means for visualization only; no differential test is shown.
+
+.. figure:: ../_static/validation_10sample_fragment_length.png
+   :alt: Fragment-length distributions for ten full-depth technical samples
+   :width: 85%
+
+   ``qc.2`` produced one fragment-length table and plot per sample plus the
+   combined view. Thin lines are samples and thick lines are descriptive group
+   means. Interpret the nucleosomal profile with library preparation and the
+   other QC evidence.
+
+.. figure:: ../_static/validation_10sample_scheduler_resources.png
+   :alt: Slurm elapsed time and peak memory for ten full-depth technical samples
+   :width: 100%
+
+   The resource history includes the initial execution and two checkpoint
+   recoveries used while validating package fixes. It demonstrates isolated
+   per-sample parallel execution and observed memory use; cumulative elapsed
+   time is not a clean-run benchmark or a resource guarantee for another
+   cluster.
+
+Detailed Two-Sample Output Examples
+-----------------------------------
 
 The following are sanitized renders from **only two preselected example
 samples**: one control and one sALS sample from the deterministic Phase 13

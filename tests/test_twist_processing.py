@@ -382,24 +382,25 @@ def test_cpg_matrix_uses_one_based_cytosine_for_merged_context(
 ):
     paths = {"cpg_matrix": str(tmp_path / "matrix")}
     bedgraphs = [str(tmp_path / "sample_1_CpG.bedGraph")]
-    Path(bedgraphs[0]).touch()
-    monkeypatch.setattr("shutil.which", lambda executable: "/usr/bin/bedtools")
-
-    def fake_run(command, shell):
-        tmp_output = Path(paths["cpg_matrix"]) / "cpg_matrix.tsv.tmp"
-        tmp_output.write_text(
-            "chrom\tstart\tend\tsample_1\n"
-            "chr1\t25114\t25116\t83\n"
-            "chr1\t29336\t29337\t50\n"
-        )
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr("subprocess.run", fake_run)
+    Path(bedgraphs[0]).write_text(
+        "track type=bedGraph description=sample_1\n"
+        "chr1\t25114\t25116\t83\n"
+        "chr1\t29336\t29337\t50\n"
+    )
+    monkeypatch.setattr(
+        process_module,
+        "recorded_run",
+        lambda *args, **kwargs: pytest.fail(
+            "single-sample matrix creation must not call bedtools unionbedg"
+        ),
+    )
     output = process_module._merge_cpg(
         bedgraphs, [_sample()], paths
     )
 
     rows = Path(output).read_text().splitlines()
-    assert rows[0] == "cpg_id\tsample_1"
-    assert rows[1].startswith("chr1_25115\t")
-    assert rows[2].startswith("chr1_29337\t")
+    assert rows == [
+        "cpg_id\tsample_1",
+        "chr1_25115\t83",
+        "chr1_29337\t50",
+    ]

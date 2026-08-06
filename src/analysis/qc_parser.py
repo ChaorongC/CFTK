@@ -400,8 +400,34 @@ def parse_fragment_csv(path: str) -> dict:
     if not path or not os.path.exists(path):
         return out
     try:
-        df = pd.read_csv(path, sep="\t", skiprows=1, header=None)
-        df.columns = ["size", "count"] + (["scaled"] if df.shape[1] > 2 else [])
+        first_fields = None
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    first_fields = stripped.split("\t")
+                    break
+        if not first_fields:
+            return out
+
+        normalized = {field.strip().lower() for field in first_fields}
+        has_header = "size" in normalized and bool(
+            normalized & {"occurrences", "count"}
+        )
+        if has_header:
+            raw = pd.read_csv(path, sep="\t", comment="#")
+            columns = {str(col).strip().lower(): col for col in raw.columns}
+            count_col = columns.get("occurrences") or columns.get("count")
+            df = raw[[columns["size"], count_col]].copy()
+            df.columns = ["size", "count"]
+        else:
+            df = pd.read_csv(
+                path, sep="\t", comment="#", header=None,
+                usecols=[0, 1], names=["size", "count"],
+            )
+        df["size"] = pd.to_numeric(df["size"], errors="coerce")
+        df["count"] = pd.to_numeric(df["count"], errors="coerce")
+        df = df.dropna(subset=["size", "count"])
         df = df[df["size"] < 1000].copy()
         df["size"]  = df["size"].astype(int)
         df["count"] = df["count"].astype(float)

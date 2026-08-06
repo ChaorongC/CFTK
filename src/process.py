@@ -477,36 +477,66 @@ def _merge_cpg(bedgraph_files, samples, paths):
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "cpg_matrix.tsv")
 
-    bedtools = shutil.which("bedtools")
-    if bedtools is None:
-        sys.exit("[merge] ERROR: bedtools not found in PATH.")
-
     name_map = {s["name"]: s["name"] for s in samples}
     col_names = []
     for fp in bedgraph_files:
         sample_name = os.path.basename(fp).replace("_CpG.bedGraph", "")
         col_names.append(name_map.get(sample_name, sample_name))
-    col_names_str = " ".join(col_names)
+    tmp_path = None
 
-    stripped = " ".join(
-        f"<(grep -v '^track' {fp} | cut -f1-4)" for fp in bedgraph_files
-    )
-    tmp_path = out_path + ".tmp"
-    cmd = (
-        f"bash -c '"
-        f"{bedtools} unionbedg -header -names {col_names_str} -filler NA "
-        f"-i {stripped}"
-        f" > {tmp_path}'"
-    )
+    if len(bedgraph_files) == 1:
+        rows = []
+        with open(bedgraph_files[0], "r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                stripped_line = line.strip()
+                if not stripped_line or stripped_line.startswith(
+                    ("track", "browser", "#")
+                ):
+                    continue
+                fields = stripped_line.split("\t")
+                if len(fields) < 4:
+                    sys.exit(
+                        f"[merge] ERROR: invalid bedGraph row at "
+                        f"{bedgraph_files[0]}:{line_number}; expected at "
+                        "least four tab-separated columns."
+                    )
+                rows.append(fields[:4])
+        if not rows:
+            sys.exit(
+                f"[merge] ERROR: no CpG rows found in {bedgraph_files[0]}."
+            )
+        matrix = pd.DataFrame(
+            rows, columns=["chrom", "start", "end", col_names[0]]
+        )
+        disp(f"[merge] single bedGraph: 1 file → {out_path}")
+    else:
+        bedtools = shutil.which("bedtools")
+        if bedtools is None:
+            sys.exit("[merge] ERROR: bedtools not found in PATH.")
 
-    disp(f"[merge] bedtools unionbedg: {len(bedgraph_files)} files → {out_path}")
-    ret = recorded_run(cmd, shell=True, label="merge CpG matrix")
-    if ret.returncode != 0:
-        sys.exit("[merge] ERROR: bedtools unionbedg failed.")
+        col_names_str = " ".join(col_names)
+        stripped = " ".join(
+            f"<(grep -v '^track' {fp} | cut -f1-4)" for fp in bedgraph_files
+        )
+        tmp_path = out_path + ".tmp"
+        cmd = (
+            f"bash -c '"
+            f"{bedtools} unionbedg -header -names {col_names_str} -filler NA "
+            f"-i {stripped}"
+            f" > {tmp_path}'"
+        )
 
-    matrix = pd.read_csv(tmp_path, sep="\t")
-    if matrix.shape[1] < 4:
-        sys.exit("[merge] ERROR: bedtools unionbedg returned an invalid table.")
+        disp(
+            f"[merge] bedtools unionbedg: {len(bedgraph_files)} files → "
+            f"{out_path}"
+        )
+        ret = recorded_run(cmd, shell=True, label="merge CpG matrix")
+        if ret.returncode != 0:
+            sys.exit("[merge] ERROR: bedtools unionbedg failed.")
+
+        matrix = pd.read_csv(tmp_path, sep="\t")
+        if matrix.shape[1] < 4:
+            sys.exit("[merge] ERROR: bedtools unionbedg returned an invalid table.")
     chrom_col, start_col, end_col = matrix.columns[:3]
     # MethylDackel merged CpGs span C and G. Keep the established 1-based
     # cytosine coordinate rather than using BED end, which would identify G.
@@ -522,7 +552,8 @@ def _merge_cpg(bedgraph_files, samples, paths):
     if n_dropped > 0:
         disp(f"[merge] dropped {n_dropped} duplicate CpG positions")
     matrix.to_csv(out_path, sep="\t")
-    os.remove(tmp_path)
+    if tmp_path is not None:
+        os.remove(tmp_path)
     disp(f"[merge] {matrix.shape[0]} CpGs × {matrix.shape[1]} samples → {out_path}")
     return out_path
 

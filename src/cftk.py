@@ -78,7 +78,7 @@ def _cmd_process(args):
 
 
 def _cmd_qc(args):
-    from init import get_all_samples, get_bam, get_matrix_path, get_group_names
+    from init import get_all_samples, get_bam, get_matrix_path
     from analysis.qc import run_qc
     from resource_planning import (
         detect_scheduler_allocation,
@@ -90,7 +90,6 @@ def _cmd_qc(args):
     cfg, paths = _load(args)
     qc_p = _p(cfg, "analysis", "qc", "params", default={})
 
-    ga, gb      = get_group_names(cfg)
     all_samples = get_all_samples(cfg)
 
     # M2: pass all_samples and paths for step 0 (qc_parser)
@@ -116,9 +115,11 @@ def _cmd_qc(args):
         raise SystemExit(f"[qc] ERROR: invalid CPU resource plan: {exc}") from exc
     args.total_cores = total_cores
     args.parallel = resource_plan["concurrent_samples"]
+    # QC labels describe available sample groups; unlike comparative analyses,
+    # QC remains valid for a processing-only project with one declared group.
     args.group_labels = {
-        ga: [s["name"] for s in cfg["samples"].get(ga, [])],
-        gb: [s["name"] for s in cfg["samples"].get(gb, [])],
+        group: [sample["name"] for sample in members]
+        for group, members in cfg.get("samples", {}).items()
     }
     os.makedirs(paths["qc"], exist_ok=True)
 
