@@ -210,6 +210,10 @@ implementation:
   differential route and metilene-based DMR route still need a separate
   method audit before they can be presented as a covariate-adjusted biomarker
   workflow.
+- For the default Twist targeted assay, WPS, occupancy, and DELFI now run in
+  panel-overlap scope by default. Their outputs are not genome-wide measures;
+  whole-genome use requires an explicit validated override. Biological
+  performance validation of these panel-restricted features remains open.
 
 ## 6. Conda Distribution
 

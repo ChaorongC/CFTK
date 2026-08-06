@@ -279,10 +279,12 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     plan_args = parser.parse_args(["plan", "--preset", "comparative"])
     analyze_args = parser.parse_args(["analyze", "--stage", "diff", "report"])
     doctor_args = parser.parse_args(["doctor", "--analysis-preset", "descriptive"])
+    frag_args = parser.parse_args(["frag", "--wps", "--fragmentomics-scope", "panel"])
 
     assert plan_args.preset == "comparative"
     assert analyze_args.stages == ["diff", "report"]
     assert doctor_args.analysis_preset == "descriptive"
+    assert frag_args.fragmentomics_scope == "panel"
 
 
 def test_differential_stage_receives_the_planned_cpu_budget(modules, tmp_path):

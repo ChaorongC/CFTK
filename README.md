@@ -135,6 +135,11 @@ introduce R/external-tool and modeling dependencies. Every attempt records a
 preflight report, stage contracts, command mirror, evidence, and HTML summary
 under `results/provenance/analysis-runs/<run-id>/`.
 
+The default Twist targeted profile automatically restricts WPS, occupancy, and
+DELFI to panel-overlapping reads and regions. Review the recorded scope in the
+plan and run manifest; use `--fragmentomics-scope genome` only for validated
+whole-genome inputs.
+
 Step 3 also writes Picard target and alignment metrics. Schema-v2 projects use
 the selected profile's covered-target BED. `--target-bed PATH` remains an
 expert one-run override; legacy source checkouts retain the bundled fallback.

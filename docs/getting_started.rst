@@ -114,7 +114,10 @@ After a successful core run, start with a read-only plan:
 WPS, and reporting; two-group projects additionally receive differential
 analysis. Choose ``--preset dmr``, ``--preset mesa``, or ``--preset all`` only
 after reviewing the plan. Comparative presets use explicit sample-sheet roles,
-not group-name inference. See :doc:`user_guide/downstream_workflow`.
+not group-name inference. With the default Twist targeted profile, WPS,
+occupancy, and DELFI are automatically restricted to panel-overlapping reads
+and regions; the plan records this limitation. See
+:doc:`user_guide/downstream_workflow`.
 
 6. Run Expert Commands
 ----------------------

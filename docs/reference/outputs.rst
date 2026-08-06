@@ -61,6 +61,10 @@ CFTK writes results below ``<output_dir>/results``.
      - End motif features.
    * - ``4_fragmentomics/cleavage/``
      - Cleavage features.
+   * - ``4_fragmentomics/_scope/<scope-id>/``
+     - Deterministic targeted-fragmentomics intermediates: clipped panel
+       regions/bins, panel-read BAMs and indexes, and ``scope.json``. These
+       files document the panel limitation and are required for resume.
    * - ``5_mesa/``
      - MESA performance, model, and LOOCV outputs.
    * - ``report/``

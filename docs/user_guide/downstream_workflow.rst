@@ -24,6 +24,19 @@ runs it before the dependent analysis. The resolved order and dependency edges
 are recorded in the plan; other configured modalities must already provide a
 matrix or preflight remains blocked.
 
+Targeted-panel scope
+--------------------
+
+The default Twist Human Methylome assay is a capture panel. For the WPS,
+occupancy, and DELFI stages, ``auto`` therefore creates a deterministic scope
+under ``results/4_fragmentomics/_scope/``: reads are filtered to alignments
+overlapping the profile ``target_bed``, WPS/occupancy regions are clipped to
+panel overlap, and DELFI bins are clipped to panel overlap. The plan, doctor
+report, run manifest, and ``scope.json`` repeat this limitation so panel-level
+features are not mistaken for genome-wide measurements. Use
+``--fragmentomics-scope genome`` only for validated whole-genome inputs, or
+``--fragmentomics-scope panel`` for a custom targeted profile.
+
 For the DMR preset, preflight verifies that ``Rscript`` can load the three
 packages used by CFTK's bundled annotation script: ``annotatr``,
 ``TxDb.Hsapiens.UCSC.hg38.knownGene``, and ``GenomicRanges``.

@@ -50,6 +50,8 @@ Commands
    ``--json`` writes only machine-readable JSON to stdout.
    ``--analysis-preset`` or ``--analysis-stage`` adds read-only checks for the
    downstream stage dependencies, inputs, references, roles, and CPU plan.
+   ``--fragmentomics-scope`` applies the same assay-aware scope resolution to
+   selected WPS, occupancy, and DELFI checks.
 
    Human checks use ``PASS``, ``WARN``, and ``FAIL``. No required failures
    returns exit status 0; one or more failures returns 1; invalid arguments
@@ -101,7 +103,9 @@ Commands
    ``auto`` plans occupancy, WPS, and reporting for one group; it additionally
    plans differential analysis for an explicit two-group control/case project.
    ``comparative`` and ``all`` require roles, not group-name inference. Plans
-   are recorded under ``results/provenance/analysis-plans/``. If configured
+   are recorded under ``results/provenance/analysis-plans/``. Use
+   ``--fragmentomics-scope panel|genome`` only when overriding the assay-aware
+   default. If configured
    differential or MESA modalities require occupancy or WPS matrices, their
    producer stages are added ahead of the dependent stage.
 
@@ -120,7 +124,8 @@ Commands
    Explicit presets are ``descriptive``, ``differential``, ``dmr``,
    ``fragmentomics``, ``mesa``, ``comparative``, ``all``, and ``report``.
    Use ``--stage`` for a precise stage or alias such as ``diff``, ``wps``, or
-   ``report``. ``--adopt-existing`` validates complete outputs produced before
+   ``report``. ``--fragmentomics-scope`` controls targeted WPS, occupancy, and
+   DELFI inputs; it defaults to panel scope for Twist. ``--adopt-existing`` validates complete outputs produced before
    an analysis manifest; untrusted partial outputs are quarantined before a
    retry. See :doc:`../user_guide/downstream_workflow`.
 
@@ -176,11 +181,14 @@ Commands
 ``frag``
    Run fragmentomics workflows. Occupancy and WPS are valid for a one-group
    descriptive project; comparison figures are produced only when two groups
-   are available.
+   are available. The default Twist profile scopes WPS, occupancy, and DELFI to
+   panel-overlapping reads and regions. Use ``--fragmentomics-scope genome``
+   only for validated whole-genome inputs.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json frag --wps
+      cftk --config cftk_init.json frag --delfi --fragmentomics-scope panel
 
 ``mesa``
    Run MESA modality performance, model construction, and LOOCV. It requires

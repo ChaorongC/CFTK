@@ -745,6 +745,7 @@ def run_doctor(args):
                 cfg,
                 analysis_stages,
                 parallel_override=getattr(args, "parallel", None),
+                fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
             )
     failures = sum(item["status"] == "FAIL" for item in checks.items)
     warnings = sum(item["status"] == "WARN" for item in checks.items)
@@ -757,6 +758,7 @@ def run_doctor(args):
         "steps": sorted(steps),
         "analysis_preset": getattr(args, "analysis_preset", None),
         "analysis_stages": analysis_stages,
+        "fragmentomics_scope": getattr(args, "fragmentomics_scope", None),
         "summary": {
             "pass": sum(item["status"] == "PASS" for item in checks.items),
             "warn": warnings,

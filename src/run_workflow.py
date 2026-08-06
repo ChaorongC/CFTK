@@ -663,6 +663,14 @@ def _write_summary_html(manifest, path, project_root=None):
     error_block = (
         f'<h2>Terminal error</h2><pre>{html.escape(error)}</pre>' if error else ""
     )
+    scope = manifest.get("fragmentomics_scope")
+    scope_block = ""
+    if isinstance(scope, dict) and scope:
+        scope_block = (
+            "<h2>Fragmentomics scope</h2>"
+            f"<p><strong>Mode:</strong> {html.escape(str(scope.get('mode', 'unknown')))}<br>"
+            f"<strong>Note:</strong> {html.escape(str(scope.get('note', '')))}</p>"
+        )
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CFTK run {html.escape(manifest['run_id'])}</title>
@@ -682,6 +690,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
 <strong>Started:</strong> {html.escape(manifest.get('started_at', ''))}<br>
 <strong>Finished:</strong> {html.escape(manifest.get('finished_at') or 'in progress')}</p>
 {error_block}
+{scope_block}
 {resource_table}
 <h2>Stages</h2><table><thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <h2>Run records</h2><ul>{''.join(record_links)}</ul>

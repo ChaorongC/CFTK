@@ -213,6 +213,30 @@ def test_schema_v2_exposes_advanced_duplicate_marking_tool(
     assert config["process"]["step3_markdup"]["tool"] == "picard"
 
 
+def test_schema_v2_exposes_fragmentomics_scope_override(init_module, tmp_path):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["fragmentomics_scope"] = "panel"
+
+    config = init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
+
+    assert config["analysis"]["frag"]["scope"] == "panel"
+
+
+@pytest.mark.parametrize("value", ["invalid", 1, True])
+def test_schema_v2_rejects_invalid_fragmentomics_scope(init_module, tmp_path, value):
+    make_sample_sheet(tmp_path)
+    reference_root = tmp_path / "references"
+    make_profile(reference_root)
+    raw = compact_config(tmp_path, reference_root)
+    raw["fragmentomics_scope"] = value
+
+    with pytest.raises(SystemExit, match="fragmentomics_scope"):
+        init_module.resolve_schema_v2(raw, tmp_path / "cftk_init.json")
+
+
 @pytest.mark.parametrize("value", ["unknown", 1, True])
 def test_schema_v2_rejects_invalid_duplicate_marking_tool(
     init_module, tmp_path, value

@@ -20,6 +20,12 @@ from types import SimpleNamespace
 from init import get_all_samples, get_bam, get_matrix_path, get_work_paths, load_config
 from resource_planning import detect_scheduler_allocation, plan_parallelism
 from util import configure_command_log, disp
+from analysis.assay_scope import (
+    ScopeError,
+    describe_scope,
+    resolve_scope,
+    scope_artifact_paths,
+)
 
 import run_workflow as _core
 
@@ -323,6 +329,7 @@ def _load_context(args):
     except (SystemExit, OSError, KeyError, ValueError) as exc:
         raise AnalysisContractError(f"project configuration could not be resolved: {exc}") from exc
     paths = get_work_paths(cfg)
+    scope_request = getattr(args, "fragmentomics_scope", None)
     return {
         "config_path": config_path,
         "lock_path": lock_path,
@@ -330,11 +337,30 @@ def _load_context(args):
         "cfg": cfg,
         "samples": get_all_samples(cfg),
         "paths": paths,
+        "fragmentomics_scope_request": scope_request,
+        "fragmentomics_scope": None,
         "identity": {
             "config_sha256": _sha256(config_path),
             "lock_sha256": _sha256(lock_path),
         },
     }
+
+
+def _populate_scope_context(context, stages):
+    """Resolve targeted scope only when a scoped fragmentomics stage is selected."""
+
+    scoped_kinds = {"occupancy", "wps", "delfi"}
+    if not any(_STAGE_META[stage]["kind"] in scoped_kinds for stage in stages):
+        context["fragmentomics_scope"] = None
+        return None
+    context["fragmentomics_scope"] = describe_scope(
+        context["cfg"],
+        context["paths"],
+        [sample["name"] for sample in context["samples"]],
+        requested=context.get("fragmentomics_scope_request"),
+        bam_paths=[get_bam(sample, context["paths"]) for sample in context["samples"]],
+    )
+    return context["fragmentomics_scope"]
 
 
 def _sample_names(context):
@@ -454,6 +480,18 @@ def _artifact_specs(context, stage_id):
         ])
     elif kind == "report":
         specs.append(_spec(Path(paths["report"]) / "report.html", "self-contained HTML report", role="report"))
+    if kind in {"occupancy", "wps", "delfi"}:
+        for path in scope_artifact_paths(
+            context["cfg"],
+            paths,
+            samples,
+            kind,
+            requested=context.get("fragmentomics_scope_request"),
+            bam_paths=[get_bam(sample, paths) for sample in context["samples"]],
+        ):
+            path = Path(path)
+            role = "input" if path.suffix == ".bed" else "output"
+            specs.append(_spec(path, f"targeted fragmentomics scope artifact for {kind}", role=role))
     return specs
 
 
@@ -478,6 +516,15 @@ def _stage_requirements(context, stage_id):
             requirements["inputs"].append(Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph")
     elif stage_id in _FRAGMENT_STAGES:
         requirements["inputs"].extend(get_bam(sample, paths) for sample in context["samples"])
+        scope = {"mode": "genome"}
+        if kind in {"occupancy", "wps", "delfi"}:
+            try:
+                scope = resolve_scope(
+                    cfg, context.get("fragmentomics_scope_request")
+                )
+            except ScopeError as exc:
+                requirements["references"].append(str(exc))
+                scope = {"mode": "invalid"}
         if kind == "occupancy":
             requirements["executables"].update(("python", "wigToBigWig", "bigWigAverageOverBed"))
             requirements["references"].extend(("chrom_sizes", "tss_pas_bed"))
@@ -495,6 +542,9 @@ def _stage_requirements(context, stage_id):
         elif kind == "cleavage":
             requirements["python"].update(("finaletoolkit", "pyBigWig"))
             requirements["references"].extend(("chrom_sizes", "ctcf_bed"))
+        if kind in {"occupancy", "wps", "delfi"} and scope.get("mode") == "panel":
+            requirements["executables"].add("samtools")
+            requirements["references"].append("target_bed")
     elif kind == "mesa":
         requirements["python"].update(("mesa", "sklearn", "scipy"))
         modalities = _config_params(cfg, "analysis", "mesa", "params", "modalities", default=["cpg"]) or ["cpg"]
@@ -565,6 +615,11 @@ def _stage_command(context, stage_id, args):
         command.append("report")
     else:
         command.extend(("frag", f"--{kind.replace('_', '-')}"))
+    if (
+        kind in {"occupancy", "wps", "delfi"}
+        and getattr(args, "fragmentomics_scope", None) is not None
+    ):
+        command.extend(("--fragmentomics-scope", str(args.fragmentomics_scope)))
     if getattr(args, "parallel", None):
         command.extend(("--parallel", str(args.parallel)))
     return " ".join(__import__("shlex").quote(str(value)) for value in command)
@@ -581,6 +636,15 @@ def _validate_reference_fields(context, stage_id):
         "end_motif": ("genome_2bit",),
         "cleavage": ("chrom_sizes", "ctcf_bed"),
     }.get(kind, ())
+    if kind in {"occupancy", "wps", "delfi"}:
+        try:
+            scope = resolve_scope(
+                cfg, context.get("fragmentomics_scope_request")
+            )
+        except ScopeError as exc:
+            return [str(exc)]
+        if scope["mode"] == "panel":
+            fields = ("target_bed",) + tuple(fields)
     errors = []
     for field in fields:
         value = ref.get(field)
@@ -671,7 +735,14 @@ def _check_dmr_r_packages(checks):
     )
 
 
-def analysis_doctor_checks(checks, cfg, stages, *, parallel_override=None):
+def analysis_doctor_checks(
+    checks,
+    cfg,
+    stages,
+    *,
+    parallel_override=None,
+    fragmentomics_scope=None,
+):
     """Add read-only, workflow-specific checks to the core doctor object."""
     role_errors = []
     if any(stage in _COMPARATIVE_STAGES for stage in stages):
@@ -694,7 +765,29 @@ def analysis_doctor_checks(checks, cfg, stages, *, parallel_override=None):
         "cfg": cfg,
         "paths": get_work_paths(cfg),
         "samples": get_all_samples(cfg),
+        "fragmentomics_scope_request": fragmentomics_scope,
     }
+    if any(stage in {"fragmentomics.occupancy", "fragmentomics.wps", "fragmentomics.delfi"} for stage in stages):
+        try:
+            scope = describe_scope(
+                cfg,
+                context["paths"],
+                [sample["name"] for sample in context["samples"]],
+                requested=fragmentomics_scope,
+                bam_paths=[get_bam(sample, context["paths"]) for sample in context["samples"]],
+            )
+        except ScopeError as exc:
+            checks.fail(
+                "analysis.fragmentomics_scope",
+                str(exc),
+                remedy="Repair the target BED/profile or pass --fragmentomics-scope genome only for validated whole-genome inputs.",
+            )
+        else:
+            checks.pass_(
+                "analysis.fragmentomics_scope",
+                scope["note"],
+                details=scope,
+            )
     planned_outputs = {
         spec["path"]
         for stage in stages
@@ -787,6 +880,11 @@ def build_plan(context, args, *, doctor_report=None):
             "resources": next(row for row in resources["stages"] if row["stage"] == stage),
             "expected": _artifact_specs(context, stage),
             "status": "blocked" if role_errors and _STAGE_META[stage]["comparative"] else "planned",
+            "fragmentomics_scope": (
+                context.get("fragmentomics_scope")
+                if _STAGE_META[stage]["kind"] in {"occupancy", "wps", "delfi"}
+                else None
+            ),
         })
     issues = [f"roles: {error}" for error in role_errors]
     if not resources["scheduler_compatible"]:
@@ -807,6 +905,7 @@ def build_plan(context, args, *, doctor_report=None):
         "lock": str(context["lock_path"]),
         "project_identity": context["identity"],
         "roles": _role_info(context["cfg"]),
+        "fragmentomics_scope": context.get("fragmentomics_scope"),
         "resource_plan": resources,
         "stages": records,
         "doctor": doctor_report,
@@ -833,16 +932,18 @@ def plan(args):
     try:
         context = _load_context(args)
         stages = resolve_stages(getattr(args, "preset", "auto"), context["cfg"], getattr(args, "stages", None))
+        _populate_scope_context(context, stages)
         from doctor import run_doctor
         report_args = SimpleNamespace(
             config=str(context["config_path"]), step=[], target_bed=None,
             skip_picard_metrics=True, parallel=getattr(args, "parallel", None),
             analysis_stages=list(stages), analysis_only=True,
+            fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
         )
         doctor_report = run_doctor(report_args)
         plan_payload = build_plan(context, args, doctor_report=doctor_report)
         plan_path = _save_plan(plan_payload, context)
-    except (AnalysisContractError, OSError, ValueError) as exc:
+    except (AnalysisContractError, ScopeError, OSError, ValueError) as exc:
         raise SystemExit(f"[plan] ERROR: {exc}") from exc
     if getattr(args, "json", False):
         print(json.dumps(plan_payload, indent=2, sort_keys=True))
@@ -932,6 +1033,7 @@ def _stage_args(context, stage_id, args):
     common = {
         "config": str(context["config_path"]),
         "parallel": getattr(args, "parallel", None),
+        "fragmentomics_scope": context.get("fragmentomics_scope_request"),
         "target_bed": None,
         "skip_picard_metrics": False,
         "force": False,
@@ -978,14 +1080,16 @@ def run(args):
     try:
         context = _load_context(args)
         stages = resolve_stages(getattr(args, "preset", "auto"), context["cfg"], getattr(args, "stages", None))
+        _populate_scope_context(context, stages)
         resources = _resource_plan(context, stages, args)
-    except (AnalysisContractError, OSError, ValueError) as exc:
+    except (AnalysisContractError, ScopeError, OSError, ValueError) as exc:
         raise SystemExit(f"[analyze] ERROR: {exc}") from exc
 
     identity_options = {
         "preset": getattr(args, "preset", "auto") or "auto",
         "stages": list(stages),
         "parallel": getattr(args, "parallel", None),
+        "fragmentomics_scope": getattr(args, "fragmentomics_scope", None),
     }
     options = {
         **identity_options,
@@ -1017,6 +1121,7 @@ def run(args):
         "project_identity": identity,
         "options": options,
         "roles": _role_info(context["cfg"]),
+        "fragmentomics_scope": context.get("fragmentomics_scope"),
         "resource_plan": resources,
         "previous_run_id": previous.get("run_id") if previous else None,
         "status": "running",
@@ -1037,6 +1142,11 @@ def run(args):
                 "applicable": True,
                 "command": _stage_command(context, stage_id, args),
                 "resources": resource,
+                "fragmentomics_scope": (
+                    context.get("fragmentomics_scope")
+                    if _STAGE_META[stage_id]["kind"] in {"occupancy", "wps", "delfi"}
+                    else None
+                ),
                 "status": "pending",
                 "started_at": None,
                 "finished_at": None,
@@ -1062,6 +1172,7 @@ def run(args):
         config=str(context["config_path"]), step=[], target_bed=None,
         skip_picard_metrics=True, parallel=getattr(args, "parallel", None),
         analysis_stages=list(stages), analysis_only=True,
+        fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
     )
     preflight = run_doctor(doctor_args)
     _core._atomic_write_json(run_dir / "doctor-before.json", preflight)

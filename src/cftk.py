@@ -267,6 +267,7 @@ def _cmd_frag(args):
     from analysis.cleavage import run_cleavage
     from analysis.wps import run_wps
     from analysis.occupancy import run_occupancy
+    from analysis.assay_scope import ScopeError, prepare_scope
     from visualization.visualization import plot_fragmentomics
 
     cfg, paths = _load(args)
@@ -274,7 +275,8 @@ def _cmd_frag(args):
     frag_cfg   = _p(cfg, "analysis", "frag", default={})
 
     all_samples = get_all_samples(cfg)
-    args.infile = [get_bam(s, paths) for s in all_samples]
+    original_infile = [get_bam(s, paths) for s in all_samples]
+    args.infile = list(original_infile)
     total_cores = _p(
         cfg, "process", "step3_markdup", "params", "cores", default=20
     )
@@ -330,6 +332,10 @@ def _cmd_frag(args):
     args.cl_mapq    = _pf("cleavage", "mapq",       default=30)
     args.cl_extra   = _pf("cleavage", "extra_args", default="")
 
+    requested_scope = getattr(args, "fragmentomics_scope", None) or _p(
+        frag_cfg, "scope", default="auto"
+    )
+
     run_all = not any([
         getattr(args, "occupancy",  False),
         getattr(args, "wps",        False),
@@ -343,26 +349,60 @@ def _cmd_frag(args):
         for group, members in cfg.get("samples", {}).items()
     }
 
+    selected_kinds = {
+        kind
+        for kind, enabled in (
+            ("occupancy", run_all or getattr(args, "occupancy", False)),
+            ("wps", run_all or getattr(args, "wps", False)),
+            ("delfi", run_all or getattr(args, "delfi", False)),
+        )
+        if enabled
+    }
+    try:
+        scope = prepare_scope(
+            cfg,
+            paths,
+            all_samples,
+            original_infile,
+            requested=requested_scope,
+            cores=args.cores,
+            kinds=selected_kinds,
+        ) if selected_kinds else {
+            "info": {"requested": requested_scope, "mode": "not_applied"},
+            "bam_paths": original_infile,
+            "region_bed": args.region,
+            "bins": args.bins,
+        }
+    except ScopeError as exc:
+        raise SystemExit(f"[frag] ERROR: {exc}") from exc
+    args.fragmentomics_scope = requested_scope
+    args.scope_info = scope["info"]
+
+    def _run_stage(kind, function, output_dir, plot_mode):
+        saved = (args.infile, args.region, args.bins)
+        if kind in selected_kinds and scope["info"].get("mode") == "panel":
+            args.infile = scope["bam_paths"]
+            if kind in {"occupancy", "wps"}:
+                args.region = scope["region_bed"]
+            if kind == "delfi":
+                args.bins = scope["bins"]
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            function(args)
+            plot_fragmentomics(args, mode=plot_mode)
+        finally:
+            args.infile, args.region, args.bins = saved
+
     if run_all or getattr(args, "occupancy", False):
-        os.makedirs(paths["occ_out"], exist_ok=True)
-        run_occupancy(args)
-        plot_fragmentomics(args, mode="occupancy")
+        _run_stage("occupancy", run_occupancy, paths["occ_out"], "occupancy")
     if run_all or getattr(args, "wps", False):
-        os.makedirs(paths["wps_out"], exist_ok=True)
-        run_wps(args)
-        plot_fragmentomics(args, mode="wps")
+        _run_stage("wps", run_wps, paths["wps_out"], "wps")
     if run_all or getattr(args, "delfi", False):
-        os.makedirs(paths["delfi_out"], exist_ok=True)
-        run_delfi(args)
-        plot_fragmentomics(args, mode="delfi")
+        _run_stage("delfi", run_delfi, paths["delfi_out"], "delfi")
     if run_all or getattr(args, "end_motif", False):
-        os.makedirs(paths["end_motif_out"], exist_ok=True)
-        run_end_motif(args)
-        plot_fragmentomics(args, mode="end_motif")
+        _run_stage("end_motif", run_end_motif, paths["end_motif_out"], "end_motif")
     if run_all or getattr(args, "cleavage", False):
-        os.makedirs(paths["cleavage_out"], exist_ok=True)
-        run_cleavage(args)
-        plot_fragmentomics(args, mode="cleavage")
+        _run_stage("cleavage", run_cleavage, paths["cleavage_out"], "cleavage")
 
 
 def _cmd_mesa(args):
@@ -807,6 +847,10 @@ def build_parser():
         "--analysis-stage", dest="analysis_stages", nargs="+", default=None,
         help="Also check explicit downstream stage IDs or aliases.",
     )
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI reads and regions (default: assay-aware auto).",
+    )
     p.set_defaults(func=_cmd_doctor)
 
     # beginner run
@@ -843,6 +887,10 @@ def build_parser():
     )
     p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
     p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
     p.add_argument("--json", action="store_true", help="Write only the machine-readable plan to stdout.")
     p.set_defaults(func=_cmd_plan)
 
@@ -858,6 +906,10 @@ def build_parser():
     )
     p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
     p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
     p.add_argument("--dry-run", action="store_true", help="Write the downstream plan and evidence without executing stages.")
     p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
     p.add_argument("--json", action="store_true", help="Write the final manifest as JSON after completion.")
@@ -924,6 +976,10 @@ def build_parser():
     p.add_argument("--delfi",     action="store_true")
     p.add_argument("--end-motif", dest="end_motif", action="store_true")
     p.add_argument("--cleavage",  action="store_true")
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
     p.set_defaults(func=_cmd_frag)
 
     # mesa
