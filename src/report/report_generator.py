@@ -1859,23 +1859,22 @@ def generate_report(args):
     frag_len = 167
     matrix_path = None
 
-    if cfg_path and os.path.exists(cfg_path):
+    cfg = getattr(args, "resolved_config", None)
+    if cfg is None and cfg_path and os.path.exists(cfg_path):
         with open(cfg_path) as f:
             cfg = json.load(f)
+    if cfg is not None:
         for grp, members in cfg.get("samples", {}).items():
             groups[grp] = [s["name"] for s in members]
-        cmp = cfg.get("comparison", "")
+        cmp = cfg.get("comparison", "") or ""
         if "_vs_" in cmp:
             group_a, group_b = cmp.split("_vs_", 1)
-        elif "control_group" in cfg and "case_group" in cfg:
+        elif cfg.get("control_group") and cfg.get("case_group"):
             group_a = cfg["control_group"]
             group_b = cfg["case_group"]
         q_thr    = cfg.get("analysis", {}).get("dmr", {}).get("params", {}).get("q_thr", 0.05)
         frag_len = cfg.get("analysis", {}).get("qc", {}).get("params", {}).get("fragment", 167)
-        # matrix path from paths
-        work_dir = cfg.get("work_dir", "results")
-        # Correct path: results/1_process/5_merged_matrix/cpg_matrix.tsv
-        matrix_path = os.path.join(work_dir, "1_process", "5_merged_matrix", "cpg_matrix.tsv")
+        matrix_path = os.path.join(rd, "1_process", "5_merged_matrix", "cpg_matrix.tsv")
     else:
         for g in getattr(args, "groups", []):
             groups[g] = []

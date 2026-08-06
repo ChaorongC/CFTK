@@ -32,14 +32,15 @@ Commands
    ``--skip-reference-prep`` for validation only.
 
 ``doctor``
-   Check whether selected core processing steps can start. The default checks
-   steps 1 through 4. Diagnostics continue after failures and do not download,
-   index, repair, or process data.
+   Check whether selected core processing and optional downstream-analysis
+   stages can start. The default checks steps 1 through 4. Diagnostics continue
+   after failures and do not download, index, repair, or process data.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json doctor
       cftk --config cftk_init.json doctor --step 4 --json
+      cftk --config cftk_init.json doctor --analysis-preset comparative
 
    ``--step {1,2,3,4}`` accepts one or more space-separated values.
    ``--target-bed PATH`` validates an expert Picard covered-target override;
@@ -47,6 +48,8 @@ Commands
    tool checks. ``--parallel N`` validates a parallel-sample override against
    the configured total CPU budget and detected scheduler allocation.
    ``--json`` writes only machine-readable JSON to stdout.
+   ``--analysis-preset`` or ``--analysis-stage`` adds read-only checks for the
+   downstream stage dependencies, inputs, references, roles, and CPU plan.
 
    Human checks use ``PASS``, ``WARN``, and ``FAIL``. No required failures
    returns exit status 0; one or more failures returns 1; invalid arguments
@@ -83,6 +86,43 @@ Commands
    distinct nonzero status; a subsequent run can rebuild evidence without
    rerunning valid stages. See
    :doc:`../user_guide/beginner_run` for the full contract.
+
+``plan``
+   Resolve a role-aware downstream preset and record its dependencies,
+   resources, expected outputs, and read-only doctor result without launching
+   a stage.
+
+   .. code-block:: bash
+
+      cftk plan
+      cftk plan --preset all
+      cftk plan --stage diff report --json
+
+   ``auto`` plans occupancy, WPS, and reporting for one group; it additionally
+   plans differential analysis for an explicit two-group control/case project.
+   ``comparative`` and ``all`` require roles, not group-name inference. Plans
+   are recorded under ``results/provenance/analysis-plans/``. If configured
+   differential or MESA modalities require occupancy or WPS matrices, their
+   producer stages are added ahead of the dependent stage.
+
+``analyze``
+   Run downstream stages with fail-fast preflight, artifact contracts,
+   provenance, evidence, and resume behavior. It requires a schema-v2 project
+   and its matching lock file.
+
+   .. code-block:: bash
+
+      cftk analyze --dry-run
+      cftk analyze --preset fragmentomics
+      cftk analyze --preset comparative
+      cftk analyze --preset all
+
+   Explicit presets are ``descriptive``, ``differential``, ``dmr``,
+   ``fragmentomics``, ``mesa``, ``comparative``, ``all``, and ``report``.
+   Use ``--stage`` for a precise stage or alias such as ``diff``, ``wps``, or
+   ``report``. ``--adopt-existing`` validates complete outputs produced before
+   an analysis manifest; untrusted partial outputs are quarantined before a
+   retry. See :doc:`../user_guide/downstream_workflow`.
 
 ``process``
    Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's
@@ -134,14 +174,17 @@ Commands
       cftk --config cftk_init.json dmr
 
 ``frag``
-   Run fragmentomics workflows.
+   Run fragmentomics workflows. Occupancy and WPS are valid for a one-group
+   descriptive project; comparison figures are produced only when two groups
+   are available.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json frag --wps
 
 ``mesa``
-   Run MESA modality performance, model construction, and LOOCV.
+   Run MESA modality performance, model construction, and LOOCV. It requires
+   explicit control/case roles; CFTK does not infer labels from group names.
 
    .. code-block:: bash
 

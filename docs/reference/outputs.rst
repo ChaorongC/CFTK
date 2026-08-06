@@ -26,6 +26,13 @@ CFTK writes results below ``<output_dir>/results``.
        figures for every terminal ``cftk run`` attempt. Tables may contain
        private absolute paths and verbatim commands; do not commit them. The
        source-checkout helper remains available for historical manifests.
+   * - ``provenance/analysis-plans/<plan-id>/``
+     - Read-only downstream dependency, input, role, resource, and output
+       plan written by ``cftk plan``.
+   * - ``provenance/analysis-runs/<run-id>/``
+     - Immutable downstream-analysis attempt containing the selected preset,
+       doctor preflight, artifact/figure contracts, command mirror, resource
+       plan, evidence bundle, and HTML summary.
    * - ``provenance/quarantine/<run-id>/``
      - Preserved partial or damaged stage artifacts moved before a safe retry.
    * - ``1_process/1_trimming/``

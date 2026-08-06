@@ -30,10 +30,10 @@ def _load(args):
         if cg and ag:
             cfg["comparison"] = f"{cg}_vs_{ag}"
         else:
-            raise KeyError(
-                "Config must have 'comparison' (e.g. 'Control_vs_sALS') "
-                "or both 'control_group' and 'case_group'."
-            )
+            # Descriptive workflows (QC, fragmentomics, reporting, and merge)
+            # are valid for a one-group project. Comparative handlers call
+            # get_group_names themselves and retain their focused error.
+            cfg["comparison"] = None
     paths = get_work_paths(cfg)
     configure_command_log(os.path.join(paths["provenance"], "commands.jsonl"))
     return cfg, paths
@@ -70,6 +70,21 @@ def _cmd_doctor(args):
 def _cmd_run(args):
     from run_workflow import run
     return run(args)
+
+
+def _cmd_plan(args):
+    from analysis_workflow import plan
+    return plan(args)
+
+
+def _cmd_analyze(args):
+    import json
+    from analysis_workflow import run
+
+    manifest = run(args)
+    if getattr(args, "json", False):
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+    return manifest
 
 
 def _cmd_process(args):
@@ -241,7 +256,12 @@ def _resolve_bedgraphs(cfg, paths, group_name, selected_names=None):
 
 
 def _cmd_frag(args):
-    from init import get_all_samples, get_bam, get_group_names
+    from init import get_all_samples, get_bam
+    from resource_planning import (
+        detect_scheduler_allocation,
+        ensure_scheduler_capacity,
+        plan_parallelism,
+    )
     from analysis.delfi import run_delfi
     from analysis.end_motif import run_end_motif
     from analysis.cleavage import run_cleavage
@@ -253,10 +273,23 @@ def _cmd_frag(args):
     ref        = cfg["reference_data"]
     frag_cfg   = _p(cfg, "analysis", "frag", default={})
 
-    args.infile   = [get_bam(s, paths) for s in get_all_samples(cfg)]
-    args.cores    = _p(cfg, "process", "step3_markdup", "params", "cores", default=20)
-    args.parallel = getattr(args, "parallel", None) or \
-                    _p(cfg, "process", "parallel_samples", default=1)
+    all_samples = get_all_samples(cfg)
+    args.infile = [get_bam(s, paths) for s in all_samples]
+    total_cores = _p(
+        cfg, "process", "step3_markdup", "params", "cores", default=20
+    )
+    requested_parallel = getattr(args, "parallel", None) or _p(
+        cfg, "process", "parallel_samples", default=1
+    )
+    try:
+        ensure_scheduler_capacity(total_cores, detect_scheduler_allocation())
+        resource_plan = plan_parallelism(
+            total_cores, requested_parallel, len(all_samples)
+        )
+    except ValueError as exc:
+        raise SystemExit(f"[frag] ERROR: invalid CPU resource plan: {exc}") from exc
+    args.cores = resource_plan["threads_per_sample"]
+    args.parallel = resource_plan["concurrent_samples"]
 
     args.chrom_sizes = ref.get("chrom_sizes", "")
     args.genome2bit  = ref.get("genome_2bit", "")
@@ -305,10 +338,9 @@ def _cmd_frag(args):
         getattr(args, "cleavage",   False),
     ])
 
-    ga, gb = get_group_names(cfg)
     args.group_labels = {
-        ga: [s["name"] for s in cfg["samples"].get(ga, [])],
-        gb: [s["name"] for s in cfg["samples"].get(gb, [])],
+        group: [s["name"] for s in members]
+        for group, members in cfg.get("samples", {}).items()
     }
 
     if run_all or getattr(args, "occupancy", False):
@@ -381,22 +413,17 @@ def _make_label(cfg, paths):
     ga, gb = get_group_names(cfg)
 
     group_roles = cfg.get("group_roles", {})
-    if group_roles:
-        if group_roles.get(ga) != "control" or group_roles.get(gb) != "case":
-            sys.exit(
-                "[label] ERROR: comparison order must be control_vs_case when "
-                "explicit group_roles are provided."
-            )
-        label_a, label_b = 0, 1
-    else:
-        _disease_kw = ("als", "cancer", "disease", "tumor", "case", "patient",
-                       "mut", "ad", "pd", "ms", "hd", "treatment", "case")
-        ga_is_disease = any(kw in ga.lower() for kw in _disease_kw)
-        gb_is_disease = any(kw in gb.lower() for kw in _disease_kw)
-        if ga_is_disease and not gb_is_disease:
-            label_a, label_b = 1, 0
-        else:
-            label_a, label_b = 0, 1
+    if not group_roles:
+        sys.exit(
+            "[label] ERROR: MESA requires explicit control/case roles in the "
+            "schema-v2 sample sheet; group-name heuristics are not supported."
+        )
+    if group_roles.get(ga) != "control" or group_roles.get(gb) != "case":
+        sys.exit(
+            "[label] ERROR: comparison order must be control_vs_case when "
+            "explicit group_roles are provided."
+        )
+    label_a, label_b = 0, 1
 
     rows = [(s["name"], label_a) for s in cfg["samples"].get(ga, [])] + \
            [(s["name"], label_b) for s in cfg["samples"].get(gb, [])]
@@ -408,17 +435,16 @@ def _make_label(cfg, paths):
 
 
 def _cmd_report(args):
-    from init import get_group_names
     from report.report_generator import generate_report
 
     cfg, paths = _load(args)
-    ga, gb = get_group_names(cfg)
     os.makedirs(paths["report"], exist_ok=True)
 
     args.results_dir  = paths["results"]
     args.output_dir   = paths["report"]
     args.project_name = cfg.get("project_name", "cftk_project")
-    args.groups       = [ga, gb]
+    args.groups       = list(cfg.get("samples", {}).keys())
+    args.resolved_config = cfg
     if not hasattr(args, "config"):
         args.config = "./cftk_init.json"
 
@@ -439,7 +465,7 @@ def _cmd_merge(args):
 
 
 def _cmd_vis(args):
-    from init import get_group_names, get_all_samples, get_matrix_path
+    from init import get_all_samples, get_matrix_path
     from visualization.visualization import (
         plot_qc, plot_differential, plot_dmr,
         plot_fragmentomics, plot_mesa, plot_power,
@@ -447,7 +473,11 @@ def _cmd_vis(args):
     from util import disp
 
     cfg, paths = _load(args)
-    ga, gb     = get_group_names(cfg)
+    comparison = cfg.get("comparison")
+    if isinstance(comparison, str) and "_vs_" in comparison:
+        ga, gb = comparison.split("_vs_", 1)
+    else:
+        ga = gb = None
     diff_p     = _p(cfg, "analysis", "diff",  "params", default={})
     dmr_p      = _p(cfg, "analysis", "dmr",   "params", default={})
     frag_cfg   = _p(cfg, "analysis", "frag",  default={})
@@ -457,8 +487,8 @@ def _cmd_vis(args):
         modes = ["power", "qc", "diff", "dmr", "frag", "mesa"]
 
     group_labels = {
-        ga: [s["name"] for s in cfg["samples"].get(ga, [])],
-        gb: [s["name"] for s in cfg["samples"].get(gb, [])],
+        group: [s["name"] for s in members]
+        for group, members in cfg.get("samples", {}).items()
     }
 
     def _pf(sub, key, default=None):
@@ -487,6 +517,8 @@ def _cmd_vis(args):
             plot_qc(args)
 
     if "diff" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: differential visualization requires explicit control/case groups.")
         modalities = diff_p.get("modalities", ["cpg"])
         for mod in modalities:
             matrix = get_matrix_path(paths, mod)
@@ -504,6 +536,8 @@ def _cmd_vis(args):
             plot_differential(args)
 
     if "dmr" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: DMR visualization requires explicit control/case groups.")
         dmr_out = os.path.join(paths["differential"], "dmr")
         ann_bed = os.path.join(dmr_out, "dmr_annotated.bed")
         if not os.path.exists(ann_bed):
@@ -534,6 +568,8 @@ def _cmd_vis(args):
             plot_fragmentomics(args, mode=mode)
 
     if "mesa" in modes:
+        if not ga or not gb:
+            sys.exit("[vis] ERROR: MESA visualization requires explicit control/case groups.")
         pred_tsv = os.path.join(paths["mesa"], "loocv_predictions.tsv")
         if not os.path.exists(pred_tsv):
             disp("[vis] mesa: loocv_predictions.tsv not found, skipping.")
@@ -761,6 +797,16 @@ def build_parser():
         "--parallel", type=int, default=None, metavar="N",
         help="Validate a parallel-sample override against the total CPU budget.",
     )
+    p.add_argument(
+        "--analysis-preset", choices=("auto", "descriptive", "differential", "dmr",
+                                       "fragmentomics", "mesa", "comparative", "all", "report"),
+        default=None,
+        help="Also check a downstream analysis preset (read-only).",
+    )
+    p.add_argument(
+        "--analysis-stage", dest="analysis_stages", nargs="+", default=None,
+        help="Also check explicit downstream stage IDs or aliases.",
+    )
     p.set_defaults(func=_cmd_doctor)
 
     # beginner run
@@ -783,6 +829,39 @@ def build_parser():
         help="Also run the expensive dinucleotide-frequency QC stage.",
     )
     p.set_defaults(func=_cmd_run)
+
+    # downstream planning and analysis
+    p = sub.add_parser(
+        "plan",
+        help="Plan downstream analyses, dependencies, resources, and outputs without running them.",
+    )
+    p.add_argument(
+        "--preset",
+        choices=("auto", "descriptive", "differential", "dmr", "fragmentomics",
+                 "mesa", "comparative", "all", "report"),
+        default="auto",
+    )
+    p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
+    p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument("--json", action="store_true", help="Write only the machine-readable plan to stdout.")
+    p.set_defaults(func=_cmd_plan)
+
+    p = sub.add_parser(
+        "analyze",
+        help="Run role-aware downstream analyses with preflight, checkpoints, provenance, and evidence.",
+    )
+    p.add_argument(
+        "--preset",
+        choices=("auto", "descriptive", "differential", "dmr", "fragmentomics",
+                 "mesa", "comparative", "all", "report"),
+        default="auto",
+    )
+    p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
+    p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument("--dry-run", action="store_true", help="Write the downstream plan and evidence without executing stages.")
+    p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
+    p.add_argument("--json", action="store_true", help="Write the final manifest as JSON after completion.")
+    p.set_defaults(func=_cmd_analyze)
 
     # process
     p = sub.add_parser("process",

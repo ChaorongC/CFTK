@@ -118,6 +118,23 @@ cftk doctor --json
 cftk --config cftk_init.json process -s 1 2 3 4
 ```
 
+After a successful core run, use the role-aware downstream planner before
+launching differential, fragmentomics, DMR, MESA, and reporting stages:
+
+```bash
+cftk plan
+cftk analyze --dry-run
+cftk analyze
+```
+
+The `auto` preset runs descriptive occupancy/WPS/reporting for a one-group
+project and adds differential analysis for an explicit two-group control/case
+project. Use `cftk plan --preset all` to inspect the complete downstream graph
+before `cftk analyze --preset all`. DMR and MESA remain explicit because they
+introduce R/external-tool and modeling dependencies. Every attempt records a
+preflight report, stage contracts, command mirror, evidence, and HTML summary
+under `results/provenance/analysis-runs/<run-id>/`.
+
 Step 3 also writes Picard target and alignment metrics. Schema-v2 projects use
 the selected profile's covered-target BED. `--target-bed PATH` remains an
 expert one-run override; legacy source checkouts retain the bundled fallback.

@@ -202,6 +202,15 @@ implementation:
   configured budget. Memory remains site- and tool-dependent and must still be
   requested explicitly from the scheduler.
 
+- The role-aware downstream workflow foundation is implemented through
+  ``cftk plan`` and ``cftk analyze``. It records plans, preflight checks,
+  stage contracts, provenance, evidence, and safe resume for differential,
+  DMR, fragmentomics, MESA, and reporting stages. The current scientific
+  implementations remain unchanged: the feature-level Mann-Whitney
+  differential route and metilene-based DMR route still need a separate
+  method audit before they can be presented as a covariate-adjusted biomarker
+  workflow.
+
 ## 6. Conda Distribution
 
 **Status:** TODO; the current two-step source installation is accepted and

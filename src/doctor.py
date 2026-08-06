@@ -691,6 +691,9 @@ def run_doctor(args):
     """Run all requested diagnostics without acquiring or repairing resources."""
     checks = _Checks()
     steps = set(getattr(args, "step", None) or [1, 2, 3, 4])
+    if getattr(args, "analysis_only", False):
+        steps = set()
+    analysis_stages = list(getattr(args, "analysis_stages", None) or [])
     config_path = Path(args.config).expanduser().resolve()
     _check_runtime(checks)
     raw = _load_raw_config(config_path, checks)
@@ -712,6 +715,17 @@ def run_doctor(args):
         profile = _check_profile(checks, raw, config_path)
         _check_lock(checks, raw, config_path, profile)
     if cfg is not None:
+        if getattr(args, "analysis_preset", None) or analysis_stages:
+            try:
+                from analysis_workflow import resolve_stages
+                analysis_stages = list(resolve_stages(
+                    getattr(args, "analysis_preset", None) or "auto",
+                    cfg,
+                    analysis_stages or None,
+                ))
+            except (RuntimeError, ValueError) as exc:
+                checks.fail("analysis.plan", str(exc))
+                analysis_stages = []
         reference_records = _check_reference_companions(
             checks,
             cfg,
@@ -724,6 +738,14 @@ def run_doctor(args):
         _check_inputs(checks, cfg, steps, reference_records)
         _check_output(checks, cfg)
         _check_resources(checks, cfg, steps, getattr(args, "parallel", None))
+        if analysis_stages:
+            from analysis_workflow import analysis_doctor_checks
+            analysis_doctor_checks(
+                checks,
+                cfg,
+                analysis_stages,
+                parallel_override=getattr(args, "parallel", None),
+            )
     failures = sum(item["status"] == "FAIL" for item in checks.items)
     warnings = sum(item["status"] == "WARN" for item in checks.items)
     status = "FAIL" if failures else ("WARN" if warnings else "PASS")
@@ -733,6 +755,8 @@ def run_doctor(args):
         "exit_code": 1 if failures else 0,
         "config": str(config_path),
         "steps": sorted(steps),
+        "analysis_preset": getattr(args, "analysis_preset", None),
+        "analysis_stages": analysis_stages,
         "summary": {
             "pass": sum(item["status"] == "PASS" for item in checks.items),
             "warn": warnings,
@@ -748,6 +772,8 @@ def render_human(report):
         f"Config: {report['config']}",
         "",
     ]
+    if report.get("analysis_stages"):
+        lines.insert(1, "Analysis: " + ",".join(report["analysis_stages"]))
     for check in report["checks"]:
         lines.append(f"[{check['status']}] {check['id']}: {check['summary']}")
         if check.get("remedy"):

@@ -60,6 +60,8 @@ The major commands are:
 - ``init``: validate the config and prepare the reference genome.
 - ``doctor``: check selected processing readiness without changing the project.
 - ``run``: run the fail-fast schema-v2 core processing and QC workflow.
+- ``plan``: inspect the role-aware downstream workflow before it runs.
+- ``analyze``: run downstream stages with preflight, evidence, and resume.
 - ``process``: run raw processing steps 1 through 4.
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
@@ -97,8 +99,25 @@ Exact external commands are appended to
 by completion records containing exit status. Keep this ledger with the
 project configuration, lock file, and outputs when archiving an analysis.
 
-5. Run Expert Or Downstream Commands
-------------------------------------
+5. Plan And Run Downstream Analysis
+-----------------------------------
+
+After a successful core run, start with a read-only plan:
+
+.. code-block:: bash
+
+   cftk plan
+   cftk analyze --dry-run
+   cftk analyze
+
+``auto`` is a small default: one-group projects receive descriptive occupancy,
+WPS, and reporting; two-group projects additionally receive differential
+analysis. Choose ``--preset dmr``, ``--preset mesa``, or ``--preset all`` only
+after reviewing the plan. Comparative presets use explicit sample-sheet roles,
+not group-name inference. See :doc:`user_guide/downstream_workflow`.
+
+6. Run Expert Commands
+----------------------
 
 Examples:
 
@@ -115,7 +134,7 @@ corresponding optional commands shown below.
    cftk --config cftk_init.json report
 
 
-6. Expert Compatibility Runs
+7. Expert Compatibility Runs
 ----------------------------
 
 The legacy ``run-all`` command spans additional configured analyses:

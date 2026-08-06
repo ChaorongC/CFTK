@@ -126,6 +126,7 @@ def plot_fragmentomics(args, mode):
         for tsv in tsv_files:
             stem = os.path.splitext(os.path.basename(tsv))[0].replace(".occupancy", "")
             png, pdf = _out(out_dir, stem=f"{stem}_occupancy")
+            plot_occupancy(tsv, png, pdf)
 
     elif mode == "delfi":
         import glob
