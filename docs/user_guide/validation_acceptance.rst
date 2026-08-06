@@ -105,8 +105,9 @@ SHA-256 ledger. The runner refuses to overwrite an existing output directory.
 Step 4: Compare Read And Assay Outputs
 --------------------------------------
 
-The comparison helper reports raw measurements without silently applying a
-scientific threshold:
+The comparison helper reports raw measurements using the normal command
+settings for each tool. It does not accept a user-supplied tolerance or turn
+the comparison into a pass/fail decision:
 
 .. code-block:: bash
 
@@ -127,9 +128,9 @@ The JSON and TSV report, for each sample:
    :alt: Sambamba and Picard duplicate fraction and classification agreement
    :width: 760px
 
-The figure is descriptive. Maintainers may predeclare tolerances when
-repeating this diagnostic, but those tolerances are not applied by ordinary
-CFTK runs and are not universal biological equivalence claims.
+The figure is descriptive. This diagnostic is for maintainers and advanced
+users; it is not a user-facing gate, and ordinary CFTK runs never ask users to
+choose a cross-tool tolerance.
 
 Measured Results From The Preserved Pair
 ----------------------------------------
@@ -169,12 +170,11 @@ the control and 4.417667 for sALS. The output JSON and TSV preserve the full
 precision, together with tool versions, per-command resource reports, and
 checksums.
 
-The provisional tolerances used for this internal experiment were
-duplicate-fraction difference <=0.5 percentage points, read agreement >=99.5%,
-duplicate-key Jaccard >=0.95, relative mean-target-coverage difference <=1%,
-and weighted methylation difference <=0.5 percentage points. They are recorded
-for reproducibility only; they are not CFTK defaults or a claim that Sambamba
-and Picard are biologically interchangeable.
+No acceptance tolerance is defined for this diagnostic. The recorded values
+are retained so maintainers can inspect the behavior of Sambamba and Picard
+under the normal tool settings; CFTK does not apply a cross-tool threshold and
+users do not need to make a threshold decision. The result is not a claim that
+the two tools are biologically interchangeable.
 
 What This Does Not Prove
 ------------------------
