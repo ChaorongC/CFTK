@@ -538,6 +538,27 @@ def _relative_link(path, base_dir):
         return str(path)
 
 
+def _summary_fragmentomics_scope(manifest):
+    """Merge executed stage-local scope metadata into the run-level summary."""
+
+    scope = dict(manifest.get("fragmentomics_scope") or {})
+    for stage in manifest.get("stages", []):
+        for artifact in stage.get("expected", []):
+            if Path(artifact.get("path", "")).name != "fragmentomics_scope.json":
+                continue
+            path = Path(artifact["path"])
+            if not path.is_file():
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            resolved = payload.get("resolved_scope", payload)
+            if isinstance(resolved, dict):
+                scope.update({key: value for key, value in resolved.items() if value is not None})
+    return scope
+
+
 def _write_summary_html(manifest, path, project_root=None):
     link_base = Path(path).parent
     rows = []
@@ -663,13 +684,33 @@ def _write_summary_html(manifest, path, project_root=None):
     error_block = (
         f'<h2>Terminal error</h2><pre>{html.escape(error)}</pre>' if error else ""
     )
-    scope = manifest.get("fragmentomics_scope")
+    scope = _summary_fragmentomics_scope(manifest)
     scope_block = ""
     if isinstance(scope, dict) and scope:
+        scope_rows = []
+        for label, key in (
+            ("Mode", "mode"),
+            ("Requested", "requested"),
+            ("Assay", "assay"),
+            ("Target BED", "target_bed"),
+            ("Target BED SHA-256", "target_sha256"),
+            ("WPS/occupancy regions", "region_count"),
+            ("DELFI bins", "bins_count"),
+            ("Derived scope directory", "scope_root"),
+        ):
+            value = scope.get(key)
+            if value in (None, "", [], {}):
+                continue
+            scope_rows.append(
+                "<tr>"
+                f"<th>{html.escape(label)}</th>"
+                f"<td><code>{html.escape(str(value))}</code></td>"
+                "</tr>"
+            )
         scope_block = (
             "<h2>Fragmentomics scope</h2>"
-            f"<p><strong>Mode:</strong> {html.escape(str(scope.get('mode', 'unknown')))}<br>"
-            f"<strong>Note:</strong> {html.escape(str(scope.get('note', '')))}</p>"
+            f"<table><tbody>{''.join(scope_rows)}</tbody></table>"
+            f"<p><strong>Interpretation:</strong> {html.escape(str(scope.get('note', '')))}</p>"
         )
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

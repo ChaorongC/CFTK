@@ -129,6 +129,26 @@ def test_prepare_scope_rejects_empty_panel_overlap(scope_module, tmp_path):
         )
 
 
+def test_stage_scope_sidecar_is_compact_and_self_describing(scope_module, tmp_path):
+    cfg, paths, samples, bams = _context(tmp_path)
+    scope = scope_module.describe_scope(
+        cfg, paths, [sample["name"] for sample in samples],
+        requested="panel", bam_paths=bams,
+    )
+    scope.update({"region_count": 2, "bins_count": 2})
+    paths = {**paths, "wps_out": str(tmp_path / "results" / "4_fragmentomics" / "wps")}
+
+    sidecar = scope_module.write_scope_metadata(paths, "wps", scope)
+
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["stage"] == "wps"
+    assert payload["mode"] == "panel"
+    assert payload["target_bed"] == scope["target_bed"]
+    assert payload["region_count"] == 2
+    assert payload["resolved_scope"]["scope_key"] == scope["scope_key"]
+
+
 def test_scope_artifacts_are_not_required_for_explicit_genome_mode(scope_module, tmp_path):
     cfg, paths, samples, _bams = _context(tmp_path)
 
@@ -187,6 +207,7 @@ def test_downstream_plan_records_panel_scope_and_intermediate_contract(
 
     assert payload["fragmentomics_scope"]["mode"] == "panel"
     assert "target_overlap_regions.bed" in expected
+    assert "fragmentomics_scope.json" in expected
     assert "--fragmentomics-scope panel" in payload["stages"][0]["command"]
 
 

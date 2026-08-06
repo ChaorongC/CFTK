@@ -137,8 +137,10 @@ under `results/provenance/analysis-runs/<run-id>/`.
 
 The default Twist targeted profile automatically restricts WPS, occupancy, and
 DELFI to panel-overlapping reads and regions. Review the recorded scope in the
-plan and run manifest; use `--fragmentomics-scope genome` only for validated
-whole-genome inputs.
+plan, run manifest, and each scoped stage's
+`fragmentomics_scope.json`; use `--fragmentomics-scope genome` only for
+validated whole-genome inputs. The sidecar records the target BED identity,
+derived interval counts, and the interpretation note.
 
 Step 3 also writes Picard target and alignment metrics. Schema-v2 projects use
 the selected profile's covered-target BED. `--target-bed PATH` remains an

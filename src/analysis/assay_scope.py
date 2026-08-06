@@ -19,6 +19,11 @@ from util import recorded_run
 
 SCOPE_CHOICES = ("auto", "panel", "genome")
 TARGETED_ASSAYS = {"twist_human_methylome"}
+SCOPE_OUTPUT_KEYS = {
+    "occupancy": "occ_out",
+    "wps": "wps_out",
+    "delfi": "delfi_out",
+}
 PANEL_NOTE = (
     "Targeted-panel mode restricts WPS, occupancy, and DELFI to reads and "
     "intervals overlapping the configured target BED; these outputs are not "
@@ -428,6 +433,54 @@ def prepare_scope(cfg, paths, samples, bam_paths, *, requested=None, cores=1, ki
         "region_bed": str(derived["regions_bed"]) if region_count is not None else _absolute(reference.get("tss_pas_bed")),
         "bins": str(derived["bins_bed"]) if bins_count is not None else _absolute(reference.get("bins")),
     }
+
+
+def scope_metadata_path(paths, kind):
+    """Return the user-facing scope sidecar path for one scoped stage."""
+
+    try:
+        output_dir = paths[SCOPE_OUTPUT_KEYS[kind]]
+    except (KeyError, TypeError) as exc:
+        raise ScopeError(f"no fragmentomics output directory is configured for {kind}") from exc
+    return Path(output_dir) / "fragmentomics_scope.json"
+
+
+def write_scope_metadata(paths, kind, scope):
+    """Write a compact, stage-local scope record beside fragmentomics outputs."""
+
+    if kind not in SCOPE_OUTPUT_KEYS:
+        raise ScopeError(f"scope metadata is not supported for stage {kind!r}")
+    destination = scope_metadata_path(paths, kind)
+    resolved = dict(scope or {})
+    payload = {
+        "schema_version": 1,
+        "stage": kind,
+        "mode": resolved.get("mode"),
+        "requested": resolved.get("requested"),
+        "reason": resolved.get("reason"),
+        "assay": resolved.get("assay"),
+        "targeted_assay": resolved.get("targeted_assay"),
+        "target_bed": resolved.get("target_bed"),
+        "target_sha256": resolved.get("target_sha256"),
+        "scope_root": resolved.get("scope_root"),
+        "canonical_scope_json": resolved.get("scope_json"),
+        "regions_bed": resolved.get("regions_bed"),
+        "bins_bed": resolved.get("bins_bed"),
+        "region_count": resolved.get("region_count"),
+        "bins_count": resolved.get("bins_count"),
+        "sample_inputs": resolved.get("sample_inputs"),
+        "sample_bams": resolved.get("sample_bams"),
+        "note": resolved.get("note"),
+        "resolved_scope": resolved,
+    }
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, destination)
+    return destination
 
 
 def scope_artifact_paths(cfg, paths, sample_names, kind, requested=None, bam_paths=()):

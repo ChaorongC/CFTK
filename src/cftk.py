@@ -267,7 +267,7 @@ def _cmd_frag(args):
     from analysis.cleavage import run_cleavage
     from analysis.wps import run_wps
     from analysis.occupancy import run_occupancy
-    from analysis.assay_scope import ScopeError, prepare_scope
+    from analysis.assay_scope import ScopeError, prepare_scope, write_scope_metadata
     from visualization.visualization import plot_fragmentomics
 
     cfg, paths = _load(args)
@@ -377,6 +377,12 @@ def _cmd_frag(args):
         raise SystemExit(f"[frag] ERROR: {exc}") from exc
     args.fragmentomics_scope = requested_scope
     args.scope_info = scope["info"]
+    if selected_kinds:
+        print(
+            f"[frag] scope={scope['info'].get('mode', 'unknown')}: "
+            f"{scope['info'].get('note', '')}",
+            file=sys.stderr,
+        )
 
     def _run_stage(kind, function, output_dir, plot_mode):
         saved = (args.infile, args.region, args.bins)
@@ -388,6 +394,8 @@ def _cmd_frag(args):
                 args.bins = scope["bins"]
         try:
             os.makedirs(output_dir, exist_ok=True)
+            if kind in selected_kinds:
+                write_scope_metadata(paths, kind, scope["info"])
             function(args)
             plot_fragmentomics(args, mode=plot_mode)
         finally:

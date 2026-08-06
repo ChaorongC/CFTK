@@ -118,6 +118,8 @@ def plot_fragmentomics(args, mode):
     from visualization.plot_fragmentomics import (
         plot_occupancy, plot_delfi, plot_end_motif, plot_cleavage, plot_wps
     )
+    scope = getattr(args, "scope_info", {}) or {}
+    scope_mode = scope.get("mode")
 
     if mode == "occupancy":
         import glob
@@ -126,7 +128,7 @@ def plot_fragmentomics(args, mode):
         for tsv in tsv_files:
             stem = os.path.splitext(os.path.basename(tsv))[0].replace(".occupancy", "")
             png, pdf = _out(out_dir, stem=f"{stem}_occupancy")
-            plot_occupancy(tsv, png, pdf)
+            plot_occupancy(tsv, png, pdf, scope_mode=scope_mode)
 
     elif mode == "delfi":
         import glob
@@ -137,7 +139,7 @@ def plot_fragmentomics(args, mode):
         for tsv in tsv_files:
             stem = os.path.splitext(os.path.basename(tsv))[0]
             png, pdf = _out(out_dir, stem=f"{stem}_genome")
-            plot_delfi(tsv, png, pdf)
+            plot_delfi(tsv, png, pdf, scope_mode=scope_mode)
 
         if group_labels and len(tsv_files) > 1:
             from visualization.plot_fragmentomics import plot_delfi_group
@@ -228,7 +230,7 @@ def plot_fragmentomics(args, mode):
         for tsv in tsv_files:
             stem = os.path.splitext(os.path.basename(tsv))[0]
             png, pdf = _out(out_dir, stem=f"{stem}_profile")
-            plot_wps(tsv, png, pdf)
+            plot_wps(tsv, png, pdf, scope_mode=scope_mode)
 
 
 # ── MESA ──────────────────────────────────────────────────────────────────────

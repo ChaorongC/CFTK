@@ -125,6 +125,27 @@ def _command_summary(rows, ledger):
     }
 
 
+def _fragmentomics_scope(manifest):
+    """Include executed stage-local scope details in machine-readable evidence."""
+
+    scope = dict(manifest.get("fragmentomics_scope") or {})
+    for stage in manifest.get("stages", []):
+        for artifact in stage.get("expected", []):
+            if Path(artifact.get("path", "")).name != "fragmentomics_scope.json":
+                continue
+            path = Path(artifact["path"])
+            if not path.is_file():
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            resolved = payload.get("resolved_scope", payload)
+            if isinstance(resolved, dict):
+                scope.update({key: value for key, value in resolved.items() if value is not None})
+    return scope
+
+
 def _write_stage_figure(rows, path):
     import matplotlib
 
@@ -333,6 +354,12 @@ def summarize(manifest_path, output_dir):
         "command_ledger": command_summary,
         "note": "Tables may contain private paths; review figures before public documentation use.",
     }
+    if manifest.get("fragmentomics_scope") or any(
+        Path(artifact.get("path", "")).name == "fragmentomics_scope.json"
+        for stage in manifest.get("stages", [])
+        for artifact in stage.get("expected", [])
+    ):
+        summary["fragmentomics_scope"] = _fragmentomics_scope(manifest)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["files"] = [
         filename for filename in EVIDENCE_FILENAMES

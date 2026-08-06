@@ -32,8 +32,10 @@ occupancy, and DELFI stages, ``auto`` therefore creates a deterministic scope
 under ``results/4_fragmentomics/_scope/``: reads are filtered to alignments
 overlapping the profile ``target_bed``, WPS/occupancy regions are clipped to
 panel overlap, and DELFI bins are clipped to panel overlap. The plan, doctor
-report, run manifest, and ``scope.json`` repeat this limitation so panel-level
-features are not mistaken for genome-wide measurements. Use
+report, run manifest, stage-local ``fragmentomics_scope.json``, and canonical
+``scope.json`` repeat this limitation so panel-level features are not mistaken
+for genome-wide measurements. The HTML summary and machine-readable evidence
+also show the target identity and derived interval counts after execution. Use
 ``--fragmentomics-scope genome`` only for validated whole-genome inputs, or
 ``--fragmentomics-scope panel`` for a custom targeted profile.
 

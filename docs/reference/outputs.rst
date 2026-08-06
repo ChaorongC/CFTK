@@ -52,11 +52,11 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``3_differential/``
      - Differential, PCA, heatmap, violin, and DMR outputs.
    * - ``4_fragmentomics/occupancy/``
-     - Occupancy features.
+     - Occupancy features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/wps/``
-     - WPS features.
+     - WPS features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/delfi/``
-     - DELFI-style features.
+     - DELFI-style features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/end_motif/``
      - End motif features.
    * - ``4_fragmentomics/cleavage/``

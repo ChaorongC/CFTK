@@ -232,7 +232,9 @@ def test_adopted_outputs_resume_without_requiring_adoption_again(modules, tmp_pa
     assert resumed["stages"][0]["status"] == "resumed"
 
 
-def test_mesa_requires_explicit_roles_and_fragmentomics_accepts_one_group(modules, tmp_path, monkeypatch):
+def test_mesa_requires_explicit_roles_and_fragmentomics_accepts_one_group(
+    modules, tmp_path, monkeypatch, capsys
+):
     _, cftk = modules
     with pytest.raises(SystemExit, match="explicit control/case roles"):
         cftk._make_label(
@@ -270,6 +272,8 @@ def test_mesa_requires_explicit_roles_and_fragmentomics_accepts_one_group(module
     ))
 
     assert captured == [{"Control": ["control"]}]
+    assert (Path(paths["occ_out"]) / "fragmentomics_scope.json").is_file()
+    assert "scope=genome" in capsys.readouterr().err
 
 
 def test_parser_exposes_planning_and_analysis_commands(modules):

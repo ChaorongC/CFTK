@@ -57,6 +57,18 @@ derived files and exact ``samtools`` commands are kept under
 ``results/4_fragmentomics/_scope/<scope-id>/`` and recorded in the command
 ledger. These are panel-restricted features and must not be interpreted as
 genome-wide WPS, occupancy, or the original genome-wide DELFI score.
+Each scoped output directory also contains
+``fragmentomics_scope.json``. It is the beginner-facing record of the resolved
+mode, target BED and checksum, clipped interval counts, input signatures, and
+the interpretation warning:
+
+.. code-block:: bash
+
+   python -m json.tool results/4_fragmentomics/wps/fragmentomics_scope.json
+
+The command prints the same scope note before running. The historical DELFI
+figure filename contains ``_genome`` for compatibility; its title includes the
+resolved scope and it must not be read as proof of genome-wide coverage.
 
 Inspect the resolved choice before running:
 
@@ -112,14 +124,17 @@ command for modalities that return per-sample tables.
      - Directory
    * - occupancy
      - ``<sample>.occupancy.tsv``, ``<sample>.bw``, and
-       ``occupancy_matrix.tsv`` for multi-sample runs
+       ``occupancy_matrix.tsv`` for multi-sample runs, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/occupancy/``
    * - WPS
-     - ``<sample>.wps.tsv`` and ``wps_matrix.tsv`` for multi-sample runs
+     - ``<sample>.wps.tsv`` and ``wps_matrix.tsv`` for multi-sample runs, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/wps/``
    * - DELFI
      - ``<sample>_delfi.tsv`` (the historical companion figure name contains
-       ``_genome``); merge to ``delfi_matrix.tsv`` when needed
+       ``_genome``); merge to ``delfi_matrix.tsv`` when needed, plus
+       ``fragmentomics_scope.json``
      - ``results/4_fragmentomics/delfi/``
    * - end motif
      - ``<sample>_<kmer>mer.tsv``

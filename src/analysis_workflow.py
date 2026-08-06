@@ -25,6 +25,7 @@ from analysis.assay_scope import (
     describe_scope,
     resolve_scope,
     scope_artifact_paths,
+    scope_metadata_path,
 )
 
 import run_workflow as _core
@@ -481,6 +482,13 @@ def _artifact_specs(context, stage_id):
     elif kind == "report":
         specs.append(_spec(Path(paths["report"]) / "report.html", "self-contained HTML report", role="report"))
     if kind in {"occupancy", "wps", "delfi"}:
+        specs.append(
+            _spec(
+                scope_metadata_path(paths, kind),
+                f"resolved fragmentomics scope metadata for {kind}",
+                role="metadata",
+            )
+        )
         for path in scope_artifact_paths(
             context["cfg"],
             paths,
