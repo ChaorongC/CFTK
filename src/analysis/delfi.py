@@ -20,9 +20,9 @@ def run_delfi(args):
     os.makedirs(out_dir, exist_ok=True)
 
     mapq    = getattr(args, "delfi_mapq",   getattr(args, "mapq",    30))
-    window  = getattr(args, "delfi_window", getattr(args, "window",  20))
     extra   = getattr(args, "delfi_extra",  "")
     workers = getattr(args, "parallel",     1) or 1
+    cores   = getattr(args, "cores",        1) or 1
 
     def _process_one(bam):
         sample  = os.path.splitext(os.path.basename(bam))[0].replace(".markdup", "")
@@ -33,7 +33,7 @@ def run_delfi(args):
         cmd = (
             f"finaletoolkit delfi "
             f"-b {args.blacklist} -g {args.gap} "
-            f"-o {out_tsv} -R -q {mapq} -w {window} -M -v {extra} "
+            f"-o {out_tsv} -R -q {mapq} -w {cores} -M -v {extra} "
             f"{bam} {args.chrom_sizes} {args.genome2bit} {args.bins}"
         )
         _run(cmd, "delfi")

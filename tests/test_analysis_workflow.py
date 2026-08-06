@@ -291,6 +291,40 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert frag_args.fragmentomics_scope == "panel"
 
 
+def test_delfi_uses_planned_cores_for_finaletoolkit_workers(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from analysis import delfi
+
+    commands = []
+    monkeypatch.setattr(
+        delfi,
+        "recorded_run",
+        lambda command, **kwargs: commands.append(command) or SimpleNamespace(returncode=0),
+    )
+    args = SimpleNamespace(
+        delfi_out=str(tmp_path / "delfi"),
+        infile=[str(tmp_path / "sample.markdup.bam")],
+        blacklist="blacklist.bed",
+        gap="gap.bed",
+        chrom_sizes="hg38.chrom.sizes",
+        genome2bit="hg38.2bit",
+        bins="bins.bed",
+        delfi_mapq=30,
+        delfi_window=20,
+        delfi_extra="",
+        parallel=2,
+        cores=6,
+    )
+
+    delfi.run_delfi(args)
+
+    assert commands == [
+        "finaletoolkit delfi -b blacklist.bed -g gap.bed "
+        f"-o {tmp_path / 'delfi' / 'sample_delfi.tsv'} -R -q 30 -w 6 -M -v  "
+        f"{tmp_path / 'sample.markdup.bam'} hg38.chrom.sizes hg38.2bit bins.bed"
+    ]
+
+
 def test_differential_stage_receives_the_planned_cpu_budget(modules, tmp_path):
     analysis_workflow, _ = modules
     context = _context(tmp_path)
