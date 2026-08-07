@@ -433,8 +433,8 @@ def _artifact_specs(context, stage_id):
         for sample in samples:
             specs.extend([
                 _spec(base / f"{sample}.wps.tsv", f"WPS table for {sample}", role="report"),
-                _spec(base / f"{sample}_profile.png", f"WPS figure for {sample}", role="figure"),
-                _spec(base / f"{sample}_profile.pdf", f"WPS PDF for {sample}", role="figure"),
+                _spec(base / f"{sample}.wps_profile.png", f"WPS figure for {sample}", role="figure"),
+                _spec(base / f"{sample}.wps_profile.pdf", f"WPS PDF for {sample}", role="figure"),
             ])
         if len(samples) > 1:
             specs.append(_spec(base / "wps_matrix.tsv", "WPS feature matrix", role="report"))

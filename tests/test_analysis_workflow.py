@@ -128,11 +128,18 @@ def test_artifact_contract_handles_single_sample_descriptive_outputs(modules, tm
     context = _context(tmp_path)
 
     occupancy = analysis_workflow._artifact_specs(context, "fragmentomics.occupancy")
-    paths = {Path(item["path"]).name for item in occupancy}
+    occupancy_paths = {Path(item["path"]).name for item in occupancy}
+    wps = analysis_workflow._artifact_specs(context, "fragmentomics.wps")
+    wps_paths = {Path(item["path"]).name for item in wps}
 
-    assert "control.occupancy.tsv" in paths
-    assert "control_occupancy.png" in paths
-    assert "occupancy_matrix.tsv" not in paths
+    assert "control.occupancy.tsv" in occupancy_paths
+    assert "control_occupancy.png" in occupancy_paths
+    assert "occupancy_matrix.tsv" not in occupancy_paths
+    assert "control.wps.tsv" in wps_paths
+    assert "control.wps_profile.png" in wps_paths
+    assert "control.wps_profile.pdf" in wps_paths
+    assert "control_profile.png" not in wps_paths
+    assert "wps_matrix.tsv" not in wps_paths
 
 
 def test_planned_fragment_matrix_satisfies_later_analysis_preflight(modules, tmp_path):
