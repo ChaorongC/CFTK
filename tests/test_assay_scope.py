@@ -204,11 +204,17 @@ def test_downstream_plan_records_panel_scope_and_intermediate_contract(
     )
 
     payload = analysis_workflow.build_plan(context, args)
-    expected = {Path(item["path"]).name for item in payload["stages"][0]["expected"]}
+    expected = {
+        Path(item["path"]).name: item
+        for item in payload["stages"][0]["expected"]
+    }
 
     assert payload["fragmentomics_scope"]["mode"] == "panel"
     assert "target_overlap_regions.bed" in expected
     assert "fragmentomics_scope.json" in expected
+    assert expected["target_overlap_regions.bed"]["owned"] is False
+    assert expected["s1.markdup.bam"]["owned"] is False
+    assert expected["fragmentomics_scope.json"]["owned"] is True
     assert "--fragmentomics-scope panel" in payload["stages"][0]["command"]
 
 

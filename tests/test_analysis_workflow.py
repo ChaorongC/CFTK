@@ -239,6 +239,40 @@ def test_adopted_outputs_resume_without_requiring_adoption_again(modules, tmp_pa
     assert resumed["stages"][0]["status"] == "resumed"
 
 
+def test_incomplete_stage_does_not_quarantine_shared_artifacts(
+    modules, tmp_path, monkeypatch
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    monkeypatch.setattr(analysis_workflow, "_load_context", lambda args: context)
+    import doctor
+    monkeypatch.setattr(doctor, "run_doctor", _doctor_pass)
+
+    shared = tmp_path / "results" / "4_fragmentomics" / "_scope" / "panel" / "sample.bam"
+    output = Path(context["paths"]["report"]) / "report.html"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("shared cache\n")
+    specs = [
+        analysis_workflow._spec(shared, "shared panel BAM", owned=False),
+        analysis_workflow._spec(output, "stage report", role="report"),
+    ]
+    monkeypatch.setattr(analysis_workflow, "_artifact_specs", lambda *args: specs)
+
+    def execute(*args):
+        assert shared.read_text() == "shared cache\n"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("<html>report</html>\n")
+
+    monkeypatch.setattr(analysis_workflow, "_execute_stage", execute)
+
+    manifest = analysis_workflow.run(_args(context, adopt_existing=True))
+
+    assert manifest["status"] == "complete"
+    assert manifest["stages"][0]["quarantined"] == []
+    assert shared.read_text() == "shared cache\n"
+    assert output.is_file()
+
+
 def test_mesa_requires_explicit_roles_and_fragmentomics_accepts_one_group(
     modules, tmp_path, monkeypatch, capsys
 ):

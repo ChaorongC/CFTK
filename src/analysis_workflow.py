@@ -376,14 +376,24 @@ def _fragment_params(context, stage_kind):
     return {}
 
 
-def _spec(path, description, *, role="output", required=True, nonempty=True):
-    return _core._spec(
+def _spec(
+    path,
+    description,
+    *,
+    role="output",
+    required=True,
+    nonempty=True,
+    owned=True,
+):
+    spec = _core._spec(
         path,
         description,
         role=role,
         required=required,
         nonempty=nonempty,
     )
+    spec["owned"] = owned
+    return spec
 
 
 def _artifact_specs(context, stage_id):
@@ -499,7 +509,14 @@ def _artifact_specs(context, stage_id):
         ):
             path = Path(path)
             role = "input" if path.suffix == ".bed" else "output"
-            specs.append(_spec(path, f"targeted fragmentomics scope artifact for {kind}", role=role))
+            specs.append(
+                _spec(
+                    path,
+                    f"targeted fragmentomics scope artifact for {kind}",
+                    role=role,
+                    owned=False,
+                )
+            )
     return specs
 
 
@@ -1219,7 +1236,11 @@ def run(args):
                 _save_attempt(manifest, run_dir, provenance)
                 continue
             issues = _core._validate_artifacts(specs)
-            existing = [Path(spec["path"]) for spec in specs if Path(spec["path"]).exists()]
+            existing = [
+                Path(spec["path"])
+                for spec in specs
+                if spec.get("owned", True) and Path(spec["path"]).exists()
+            ]
             if getattr(args, "adopt_existing", False) and not issues:
                 stage_record["status"] = "adopted"
                 stage_record["finished_at"] = _utc_now()
