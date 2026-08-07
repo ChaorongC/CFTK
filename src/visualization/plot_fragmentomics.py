@@ -33,15 +33,66 @@ def _scope_suffix(scope_mode):
 # ── Nucleosome occupancy ──────────────────────────────────────────────────────
 
 def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4), scope_mode=None):
-    """Nucleosome occupancy score line plot for the supplied regions."""
-    df = pd.read_csv(tsv_path, sep="\t", header=None,
-                     names=["chrom", "start", "end", "name", "size",
-                            "mean0", "mean", "max", "summit"])
-    if "mean" not in df.columns:
-        print(f"[plot_occ] unexpected columns in {tsv_path}, skipping.")
+    """Plot occupancy scores from ``bigWigAverageOverBed`` output.
+
+    The UCSC utility emits six columns (region name, size, covered, sum,
+    mean0, mean).  Older CFTK outputs used a nine-column chromosome table;
+    both formats remain supported.  Target-panel region names are plotted in
+    input order because they do not encode chromosome coordinates.
+    """
+    raw = pd.read_csv(tsv_path, sep="\t", header=None)
+    if raw.empty:
+        print(f"[plot_occ] empty occupancy table {tsv_path}, skipping.")
+        return
+
+    if raw.shape[1] == 6:
+        df = raw.copy()
+        df.columns = ["region", "size", "covered", "sum", "mean0", "mean"]
+        df["mean"] = pd.to_numeric(df["mean"], errors="coerce")
+        df = df.dropna(subset=["mean"]).reset_index(drop=True)
+        if df.empty:
+            print(f"[plot_occ] no numeric occupancy values in {tsv_path}, skipping.")
+        else:
+            x = np.arange(len(df))
+            fig, ax = plt.subplots(figsize=figsize)
+            ax.plot(x, df["mean"], color="#e67e22", linewidth=0.6, alpha=0.8)
+            ax.set_xlabel("Target interval (input order)")
+            ax.set_ylabel("Occupancy Score")
+            ax.set_title(f"{Path(tsv_path).stem} — Nucleosome Occupancy{_scope_suffix(scope_mode)}")
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
+            fig.tight_layout()
+            _save(fig, png_path, pdf_path)
+        return
+
+    if raw.shape[1] != 9:
+        print(f"[plot_occ] unexpected {raw.shape[1]} columns in {tsv_path}, skipping.")
+        return
+
+    df = raw.copy()
+    df.columns = ["chrom", "start", "end", "name", "size",
+                  "mean0", "mean", "max", "summit"]
+    df["mean"] = pd.to_numeric(df["mean"], errors="coerce")
+    df = df.dropna(subset=["mean"]).reset_index(drop=True)
+    if df.empty:
+        print(f"[plot_occ] no numeric occupancy values in {tsv_path}, skipping.")
         return
 
     chrom_order = [f"chr{i}" for i in range(1, 23)]
+    recognized = set(df["chrom"].astype(str)) & set(chrom_order)
+    if not recognized:
+        x = np.arange(len(df))
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.plot(x, df["mean"], color="#e67e22", linewidth=0.6, alpha=0.8)
+        ax.set_xlabel("Target interval (input order)")
+        ax.set_ylabel("Occupancy Score")
+        ax.set_title(f"{Path(tsv_path).stem} — Nucleosome Occupancy{_scope_suffix(scope_mode)}")
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
+        fig.tight_layout()
+        _save(fig, png_path, pdf_path)
+        return
+
     df["chrom"] = pd.Categorical(df["chrom"], categories=chrom_order, ordered=True)
     df = df.sort_values(["chrom", "start"]).reset_index(drop=True)
 
@@ -53,12 +104,9 @@ def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4), scope_mode=Non
         if sub.empty:
             continue
         chrom_pos[chrom] = current_pos
-        gpos_list.append(
-            pd.Series(current_pos + np.arange(len(sub)), index=sub.index)
-        )
-        chrom_ctr[chrom]  = current_pos + len(sub) / 2
-        current_pos      += len(sub)
-    # assign _gpos as aligned Series to avoid loc NaN issue
+        gpos_list.append(pd.Series(current_pos + np.arange(len(sub)), index=sub.index))
+        chrom_ctr[chrom] = current_pos + len(sub) / 2
+        current_pos += len(sub)
     df["_gpos"] = pd.concat(gpos_list).reindex(df.index)
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -68,15 +116,14 @@ def plot_occupancy(tsv_path, png_path, pdf_path, figsize=(14, 4), scope_mode=Non
         if chrom not in chrom_pos:
             continue
         pos = chrom_pos[chrom]
-        n   = len(df[df["chrom"] == chrom])
+        n = len(df[df["chrom"] == chrom])
         if i % 2 == 0:
             ax.axvspan(pos, pos + n, alpha=0.05, color="gray", zorder=0)
         if i > 0:
             ax.axvline(pos, color="lightgray", linewidth=0.5, linestyle="--", alpha=0.5)
 
     ax.set_xticks([chrom_ctr[c] for c in chrom_order if c in chrom_ctr])
-    ax.set_xticklabels([c.replace("chr", "") for c in chrom_order if c in chrom_ctr],
-                       fontsize=7)
+    ax.set_xticklabels([c.replace("chr", "") for c in chrom_order if c in chrom_ctr], fontsize=7)
     ax.set_xlabel("Chromosome")
     ax.set_ylabel("Occupancy Score")
     ax.set_title(f"{Path(tsv_path).stem} — Nucleosome Occupancy{_scope_suffix(scope_mode)}")

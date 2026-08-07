@@ -359,6 +359,24 @@ def test_occupancy_runs_a_danpos_executable_without_python_prefix(monkeypatch, t
     )]
 
 
+def test_occupancy_plot_supports_panel_average_over_bed_output(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from visualization.plot_fragmentomics import plot_occupancy
+
+    table = tmp_path / "sample.occupancy.tsv"
+    table.write_text(
+        "1__panel_0\t72\t72\t38.1196\t0.529439\t0.529439\n"
+        "2__panel_1\t80\t80\t44.0\t0.55\t0.55\n"
+    )
+    png = tmp_path / "sample_occupancy.png"
+    pdf = tmp_path / "sample_occupancy.pdf"
+
+    plot_occupancy(table, png, pdf)
+
+    assert png.is_file() and png.stat().st_size > 0
+    assert pdf.is_file() and pdf.stat().st_size > 0
+
+
 def test_differential_stage_receives_the_planned_cpu_budget(modules, tmp_path):
     analysis_workflow, _ = modules
     context = _context(tmp_path)
