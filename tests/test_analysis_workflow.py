@@ -291,6 +291,92 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert frag_args.fragmentomics_scope == "panel"
 
 
+def test_delfi_uses_planned_cores_for_finaletoolkit_workers(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from analysis import delfi
+
+    commands = []
+    monkeypatch.setattr(
+        delfi,
+        "recorded_run",
+        lambda command, **kwargs: commands.append(command) or SimpleNamespace(returncode=0),
+    )
+    args = SimpleNamespace(
+        delfi_out=str(tmp_path / "delfi"),
+        infile=[str(tmp_path / "sample.markdup.bam")],
+        blacklist="blacklist.bed",
+        gap="gap.bed",
+        chrom_sizes="hg38.chrom.sizes",
+        genome2bit="hg38.2bit",
+        bins="bins.bed",
+        delfi_mapq=30,
+        delfi_window=20,
+        delfi_extra="",
+        parallel=2,
+        cores=6,
+    )
+
+    delfi.run_delfi(args)
+
+    assert commands == [
+        "finaletoolkit delfi -b blacklist.bed -g gap.bed "
+        f"-o {tmp_path / 'delfi' / 'sample_delfi.tsv'} -R -q 30 -w 6 -M -v  "
+        f"{tmp_path / 'sample.markdup.bam'} hg38.chrom.sizes hg38.2bit bins.bed"
+    ]
+
+
+def test_occupancy_runs_a_danpos_executable_without_python_prefix(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from analysis import occupancy
+
+    bam = tmp_path / "sample.markdup.bam"
+    bam.touch()
+    commands = []
+    monkeypatch.setattr(
+        occupancy,
+        "run_command",
+        lambda command, label: commands.append((command, label)),
+    )
+    args = SimpleNamespace(
+        occ_out=str(tmp_path / "occupancy"),
+        chrom_sizes="hg38.chrom.sizes",
+        region="regions.bed",
+        danpos="danpos",
+        danpos_extra="--paired 1",
+        parallel=1,
+        infile=[str(bam)],
+    )
+
+    occupancy.run_occupancy(args)
+
+    assert commands == [(
+        f"danpos dpos {bam} --paired 1 -o {tmp_path / 'occupancy' / 'danpos_tmp_sample'} && "
+        f"wigToBigWig -clip {tmp_path / 'occupancy' / 'danpos_tmp_sample' / 'pooled' / 'sample.markdup.Fnor.smooth.wig'} "
+        f"hg38.chrom.sizes {tmp_path / 'occupancy' / 'sample.bw'} && "
+        f"bigWigAverageOverBed {tmp_path / 'occupancy' / 'sample.bw'} regions.bed "
+        f"{tmp_path / 'occupancy' / 'sample.occupancy.tsv'} || exit 1",
+        "occupancy [sample]",
+    )]
+
+
+def test_occupancy_plot_supports_panel_average_over_bed_output(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "src"))
+    from visualization.plot_fragmentomics import plot_occupancy
+
+    table = tmp_path / "sample.occupancy.tsv"
+    table.write_text(
+        "1__panel_0\t72\t72\t38.1196\t0.529439\t0.529439\n"
+        "2__panel_1\t80\t80\t44.0\t0.55\t0.55\n"
+    )
+    png = tmp_path / "sample_occupancy.png"
+    pdf = tmp_path / "sample_occupancy.pdf"
+
+    plot_occupancy(table, png, pdf)
+
+    assert png.is_file() and png.stat().st_size > 0
+    assert pdf.is_file() and pdf.stat().st_size > 0
+
+
 def test_differential_stage_receives_the_planned_cpu_budget(modules, tmp_path):
     analysis_workflow, _ = modules
     context = _context(tmp_path)

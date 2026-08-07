@@ -183,7 +183,9 @@ def scope_paths(cfg, paths, sample_names=(), bam_paths=()):
         "regions_bed": root / "target_overlap_regions.bed",
         "bins_bed": root / "target_overlap_bins.bed",
         "bam_dir": bam_dir,
-        "bams": {name: bam_dir / f"{name}.panel.bam" for name in names},
+        # Keep the public sample stem stable when fragmentomics wrappers derive
+        # their output name from the scoped BAM basename.
+        "bams": {name: bam_dir / f"{name}.markdup.bam" for name in names},
         "source_records": source_records,
         "sample_records": sample_records,
         "target_bed": Path(info["target_bed"]),
