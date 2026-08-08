@@ -5,7 +5,6 @@ Cell-free DNA Toolkit Documentation
    :hidden:
    :caption: Start
 
-   user_guide/model_power_calculator
    installation
    getting_started
 
@@ -32,7 +31,9 @@ Cell-free DNA Toolkit Documentation
 
 .. rst-class:: cftk-hero
 
-CFTK is a versatile cfDNA analysis toolkit designed for cfDNA Bisulfite-sequencing data processing and analyzing, aimed to support the biomarker discovery among large-scale Liquid Biopsy cohort. 
+CFTK is a cfDNA analysis toolkit for bisulfite-sequencing processing and
+downstream analysis, designed to support biomarker discovery in large
+liquid-biopsy cohorts.
 
 .. raw:: html
 
@@ -47,16 +48,13 @@ We provide a model power calculator to evaluate whether a proposed biomarker dis
 
    .. grid-item-card:: Model Power Calculator
 
-      CFTK model power calculator, a tool to support the study design of cfDNA cohort.
+      Run the model-development power calculator locally to support cfDNA cohort
+      study design. No public hosted deployment is currently advertised.
 
       .. raw:: html
 
          <hr>
-         <a href="https://cftk-model-power.streamlit.app" target="_blank" style="display: inline-block; background-color: #1b1233; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">Try Now</a>
-         <br>
-         <a href="user_guide/model_power_calculator.html" style="color: #555; text-decoration: underline; font-size: 0.9em;">Tutorial &gt;</a>
-
-
+         <a href="user_guide/model_power_calculator.html" style="display: inline-block; background-color: #1b1233; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">Run locally</a>
 
 The beginner workflow starts with ``cftk init`` and ``cftk run``. CFTK validates
 the schema-v2 project, runs core processing and QC with fail-fast stage
@@ -83,17 +81,18 @@ Please follow the guides below to explore more details about the CFTK package.
 
       
    .. grid-item-card:: Get Started
-      :link: user_guide/index
-      :link-type: doc
-
-      Set up the initial config file ``cftk_init.json`` for your samples and explore standard CFTK workflow.
-
-   .. grid-item-card:: Run Workflows
       :link: getting_started
       :link-type: doc
 
-      Run the validated beginner workflow, inspect every stage and output, or
-      select expert commands for advanced analyses.
+      Create a project, prepare the default reference profile, and run the
+      validated beginner workflow.
+
+   .. grid-item-card:: Workflow Guides
+      :link: user_guide/index
+      :link-type: doc
+
+      Inspect expected outputs and use expert workflows for processing, QC, and
+      downstream analysis.
 
    .. grid-item-card:: Command Reference
       :link: reference/cli
@@ -107,7 +106,8 @@ Please follow the guides below to explore more details about the CFTK package.
 
    .. grid-item-card:: Report Demo
       
-      This report was generated using all the results from the CFTK workflow.
+      Static legacy report preview for layout and navigation only. It is not a
+      current default report or a patient-data result.
       
       .. raw:: html
 

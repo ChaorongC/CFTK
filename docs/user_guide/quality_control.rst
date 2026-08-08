@@ -10,8 +10,10 @@ The ``qc`` command has one table-assembly step and three cfDNA feature checks.
 
 1. Methylation distribution
    Uses the merged CpG matrix to plot cohort methylation beta-value densities.
-   Interpret this with coverage, M-bias, conversion, and assay information; its
-   shape alone is not a sample-quality verdict.
+   Interpret this with coverage, M-bias, assay information, and an
+   independently validated conversion control when required; its shape alone
+   is not a sample-quality verdict. Default CFTK processing does not generate
+   CHH/CHG-derived conversion metrics.
 
 2. Fragment length distribution
    Uses duplicate-marked BAMs and deepTools ``bamPEFragmentSize`` to write raw
@@ -85,8 +87,8 @@ available. None of these panels defines a user-facing pass/fail threshold.
    :width: 72%
 
    ``qc.1`` reads the merged CpG matrix and writes the methylation-distribution
-   PNG/PDF. The curve must be interpreted with depth, M-bias, and conversion
-   evidence.
+   PNG/PDF. The curve must be interpreted with depth, M-bias, and any
+   available independently validated conversion-control evidence.
 
 .. figure:: ../_static/workflow_fragment_length_example.png
    :alt: Sanitized fragment length example

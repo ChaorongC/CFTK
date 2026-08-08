@@ -62,9 +62,11 @@ it; it does not substitute a synthetic or partial plot.
 
 The preview below is a static render of the tracked public ``sample_report.html``
 demonstration. It contains demo labels and values only; it is not an observed
-patient report or a result from the validation cohort. A real report should be
-archived with the config, lock, command ledger, run manifest, and source result
-tables that produced it.
+patient report or a result from the validation cohort. It predates the current
+default and may display legacy CHH-derived conversion values. Current default
+processing produces CpG and M-bias evidence, not CHH/CHG-derived conversion
+metrics. A real report should be archived with the config, lock, command
+ledger, run manifest, and source result tables that produced it.
 
 .. figure:: ../_static/tutorial_report_preview.png
    :alt: Static preview of the public CFTK demonstration HTML report

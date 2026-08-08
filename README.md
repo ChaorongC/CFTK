@@ -5,7 +5,8 @@ cfMethyl-Seq style data and running downstream methylation, fragmentomics,
 visualization, modeling, and report workflows. 
 For detailed guidance and tutorial, please refer to the [CFTK website](https://chaorongc.github.io/CFTK/index.html)
 
-You can also use the [CFTK model power calculator](https://cftk-model-power.streamlit.app/) before you start to process your cfDNA cohort.
+The model-development power calculator is included in this repository and can
+be run locally from the checkout before processing a cfDNA cohort.
 
 
 The package is under active development. The `cftk` command uses a compact

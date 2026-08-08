@@ -35,5 +35,4 @@ synthetic are fixed-seed illustrations for learning the output shape only.
    MESA_modeling
    model_power
    model_power_calculator
-   validation_acceptance
    visualization_report

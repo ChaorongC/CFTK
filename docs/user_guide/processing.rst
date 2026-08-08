@@ -188,8 +188,10 @@ thresholds.
    :alt: Sanitized OB M-bias example
    :width: 72%
 
-   The OB view is interpreted together with OT, conversion, depth, and the
-   resulting CpG bedGraph; it is not a stand-alone quality verdict.
+   The OB view is interpreted together with OT, depth, the resulting CpG
+   bedGraph, and any independently validated conversion-control evidence; it
+   is not a stand-alone quality verdict. Default CFTK processing does not
+   generate CHH/CHG-derived conversion metrics.
 
 Command Provenance
 ------------------
