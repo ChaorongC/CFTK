@@ -119,6 +119,18 @@ occupancy, and DELFI are automatically restricted to panel-overlapping reads
 and regions; the plan records this limitation. See
 :doc:`user_guide/downstream_workflow`.
 
+For a computationally expensive fragmentomics stage, generate independent
+sample tasks instead of placing the cohort in one scheduler allocation:
+
+.. code-block:: bash
+
+   cftk plan --stage delfi --execution per-sample
+
+Add ``--slurm`` only to write an optional Slurm-array helper. CFTK does not
+submit it automatically; the generated finalizer runs only after all sample
+tasks succeed. ``cftk job-plan`` remains a compatibility alias, but new
+workflows should use ``cftk plan --execution per-sample``.
+
 6. Run Expert Commands
 ----------------------
 

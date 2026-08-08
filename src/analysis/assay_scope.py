@@ -9,9 +9,11 @@ analysis implementations unchanged.
 from __future__ import annotations
 
 import bisect
+import contextlib
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from util import recorded_run
@@ -287,19 +289,50 @@ def _clip_bed(source, target, destination):
                 piece += 1
             index += 1
 
-    destination = Path(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
-        for chrom, start, end, name in clipped:
-            handle.write(f"{chrom}\t{start}\t{end}\t{name}\n")
-    os.replace(temporary, destination)
+    _atomic_write_text(
+        destination,
+        "".join(f"{chrom}\t{start}\t{end}\t{name}\n" for chrom, start, end, name in clipped),
+    )
     return len(clipped)
 
 
 def _nonempty(path):
     path = Path(path)
     return path.is_file() and path.stat().st_size > 0
+
+
+def _atomic_write_text(destination, text):
+    """Atomically replace a small shared scope metadata or BED artifact."""
+
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary, destination)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+@contextlib.contextmanager
+def _artifact_lock(path):
+    """Serialize creation of one reusable scope artifact across job tasks."""
+
+    import fcntl
+
+    path = Path(path)
+    lock = Path(f"{path}.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _bam_index(path):
@@ -312,66 +345,89 @@ def _panel_bam(bam, target_bed, output, cores, sample):
     bam = Path(bam).expanduser().resolve()
     output = Path(output)
     index = Path(str(output) + ".bai")
-    if _nonempty(output) and _nonempty(_bam_index(output)):
-        return output
-    if not bam.is_file():
-        raise ScopeError(f"BAM for {sample} does not exist: {bam}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.unlink(missing_ok=True)
-    index.unlink(missing_ok=True)
-    threads = max(1, int(cores or 1))
-    view_command = [
-        "samtools", "view", "-@", str(threads), "-bh", "-L",
-        str(target_bed), "-o", str(output), str(bam),
-    ]
-    try:
-        result = recorded_run(view_command, label=f"fragmentomics scope [{sample}] view")
-    except OSError as exc:
-        raise ScopeError(
-            f"samtools is required to create the panel-read BAM for {sample}: {exc}"
-        ) from exc
-    if result.returncode != 0:
-        output.unlink(missing_ok=True)
-        raise ScopeError(
-            f"samtools could not create the panel-read BAM for {sample} "
-            f"(exit {result.returncode})"
-        )
-    index_command = ["samtools", "index", "-@", str(threads), str(output)]
-    try:
-        result = recorded_run(index_command, label=f"fragmentomics scope [{sample}] index")
-    except OSError as exc:
-        output.unlink(missing_ok=True)
-        raise ScopeError(
-            f"samtools is required to index the panel-read BAM for {sample}: {exc}"
-        ) from exc
-    if result.returncode != 0:
+    with _artifact_lock(output):
+        if _nonempty(output) and _nonempty(_bam_index(output)):
+            return output
+        if not bam.is_file():
+            raise ScopeError(f"BAM for {sample} does not exist: {bam}")
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.unlink(missing_ok=True)
         index.unlink(missing_ok=True)
-        raise ScopeError(
-            f"samtools could not index the panel-read BAM for {sample} "
-            f"(exit {result.returncode})"
-        )
-    if not _nonempty(output) or not _nonempty(_bam_index(output)):
-        raise ScopeError(f"samtools produced an incomplete panel-read BAM for {sample}")
+        threads = max(1, int(cores or 1))
+        view_command = [
+            "samtools", "view", "-@", str(threads), "-bh", "-L",
+            str(target_bed), "-o", str(output), str(bam),
+        ]
+        try:
+            result = recorded_run(view_command, label=f"fragmentomics scope [{sample}] view")
+        except OSError as exc:
+            raise ScopeError(
+                f"samtools is required to create the panel-read BAM for {sample}: {exc}"
+            ) from exc
+        if result.returncode != 0:
+            output.unlink(missing_ok=True)
+            raise ScopeError(
+                f"samtools could not create the panel-read BAM for {sample} "
+                f"(exit {result.returncode})"
+            )
+        index_command = ["samtools", "index", "-@", str(threads), str(output)]
+        try:
+            result = recorded_run(index_command, label=f"fragmentomics scope [{sample}] index")
+        except OSError as exc:
+            output.unlink(missing_ok=True)
+            raise ScopeError(
+                f"samtools is required to index the panel-read BAM for {sample}: {exc}"
+            ) from exc
+        if result.returncode != 0:
+            output.unlink(missing_ok=True)
+            index.unlink(missing_ok=True)
+            raise ScopeError(
+                f"samtools could not index the panel-read BAM for {sample} "
+                f"(exit {result.returncode})"
+            )
+        if not _nonempty(output) or not _nonempty(_bam_index(output)):
+            raise ScopeError(f"samtools produced an incomplete panel-read BAM for {sample}")
     return output
 
 
-def prepare_scope(cfg, paths, samples, bam_paths, *, requested=None, cores=1, kinds=()):
+def prepare_scope(
+    cfg,
+    paths,
+    samples,
+    bam_paths,
+    *,
+    requested=None,
+    cores=1,
+    kinds=(),
+    materialize_samples=None,
+):
     """Materialize the inputs required by selected targeted fragmentomics stages."""
 
     info = resolve_scope(cfg, requested)
     kinds = set(kinds)
     original_bams = [str(Path(path).expanduser().resolve()) for path in bam_paths]
+    names = [sample["name"] for sample in samples]
+    requested_names = set(materialize_samples or names)
+    unknown = requested_names.difference(names)
+    if unknown:
+        raise ScopeError(
+            "requested scope materialization for unknown sample(s): "
+            + ", ".join(sorted(unknown))
+        )
+    selected_pairs = [
+        (sample, bam)
+        for sample, bam in zip(samples, original_bams)
+        if sample["name"] in requested_names
+    ]
     if info["mode"] == "genome":
         reference = _reference(cfg)
         return {
             "info": info,
-            "bam_paths": original_bams,
+            "bam_paths": [bam for _sample, bam in selected_pairs],
             "region_bed": _absolute(reference.get("tss_pas_bed")),
             "bins": _absolute(reference.get("bins")),
         }
 
-    names = [sample["name"] for sample in samples]
     derived = scope_paths(cfg, paths, names, original_bams)
     root = derived["root"]
     root.mkdir(parents=True, exist_ok=True)
@@ -403,7 +459,7 @@ def prepare_scope(cfg, paths, samples, bam_paths, *, requested=None, cores=1, ki
             )
 
     scoped_bams = []
-    for sample, bam in zip(samples, original_bams):
+    for sample, bam in selected_pairs:
         scoped_bams.append(
             str(_panel_bam(
                 bam,
@@ -424,11 +480,14 @@ def prepare_scope(cfg, paths, samples, bam_paths, *, requested=None, cores=1, ki
     })
     metadata = {
         **info,
-        "sample_bams": dict(zip(names, scoped_bams)),
+        "sample_bams": {
+            sample["name"]: str(derived["bams"][sample["name"]])
+            for sample in samples
+        },
     }
-    temporary = derived["scope_json"].with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, derived["scope_json"])
+    _atomic_write_text(
+        derived["scope_json"], json.dumps(metadata, indent=2, sort_keys=True) + "\n"
+    )
     return {
         "info": metadata,
         "bam_paths": scoped_bams,
@@ -475,13 +534,9 @@ def write_scope_metadata(paths, kind, scope):
         "note": resolved.get("note"),
         "resolved_scope": resolved,
     }
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    _atomic_write_text(
+        destination, json.dumps(payload, indent=2, sort_keys=True) + "\n"
     )
-    os.replace(temporary, destination)
     return destination
 
 

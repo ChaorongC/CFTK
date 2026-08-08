@@ -38,6 +38,28 @@ HTML file:
 
    results/report/report.html
 
+``report`` automatically discovers the standard CFTK result directories; do
+not supply individual figure or metric paths. Its Workflow Summary aggregates
+the newest trusted status for each core-processing/QC and downstream stage from
+the provenance manifests, then checks the current required files. The report
+embeds available processing/QC, differential/DMR, occupancy, WPS, DELFI,
+end-motif, and MESA tables and figures. Running this command rebuilds only the
+HTML report and its embedded chart data; it does not rerun a completed analysis
+stage.
+
+For a downstream-only project whose sample sheet points to marked BAMs from
+earlier CFTK projects, the report also reads the upstream processing and QC
+artifacts from those canonical ``results/1_process/3_markdup`` source roots
+automatically. The current project results take precedence, and source files
+are never copied or modified. This makes FastQC/MultiQC, alignment,
+deduplication, M-bias, QC-score, methylation-distribution, and fragment-length
+panels available without adding private file paths to the report command.
+
+Every panel reflects an output that was actually found. For example, if the
+dinucleotide QC stage was not run, the report displays an explicit
+``Dinucleotide QC was not produced`` notice and the command needed to generate
+it; it does not substitute a synthetic or partial plot.
+
 The preview below is a static render of the tracked public ``sample_report.html``
 demonstration. It contains demo labels and values only; it is not an observed
 patient report or a result from the validation cohort. A real report should be

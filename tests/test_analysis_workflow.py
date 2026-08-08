@@ -239,6 +239,34 @@ def test_adopted_outputs_resume_without_requiring_adoption_again(modules, tmp_pa
     assert resumed["stages"][0]["status"] == "resumed"
 
 
+def test_compatible_stage_is_reused_across_different_stage_selection(
+    modules, tmp_path
+):
+    analysis_workflow, _ = modules
+    identity = {
+        "config_sha256": "config",
+        "lock_sha256": "lock",
+        "options_sha256": "new-selection",
+    }
+    manifest_path = tmp_path / "results/provenance/analysis-runs/prior/run.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps({
+        "run_id": "prior-run",
+        "project_identity": {
+            "config_sha256": "config",
+            "lock_sha256": "lock",
+            "options_sha256": "prior-selection",
+        },
+        "stages": [{"id": "fragmentomics.delfi", "status": "adopted"}],
+    }))
+
+    reused = analysis_workflow._load_previous_stage(
+        tmp_path / "results/provenance", identity, "fragmentomics.delfi"
+    )
+
+    assert reused["run_id"] == "prior-run"
+
+
 def test_incomplete_stage_does_not_quarantine_shared_artifacts(
     modules, tmp_path, monkeypatch
 ):
@@ -322,14 +350,37 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     parser = cftk.build_parser()
 
     plan_args = parser.parse_args(["plan", "--preset", "comparative"])
+    execution_plan_args = parser.parse_args([
+        "plan", "--stage", "delfi", "--execution", "per-sample", "--slurm",
+    ])
     analyze_args = parser.parse_args(["analyze", "--stage", "diff", "report"])
     doctor_args = parser.parse_args(["doctor", "--analysis-preset", "descriptive"])
     frag_args = parser.parse_args(["frag", "--wps", "--fragmentomics-scope", "panel"])
+    job_args = parser.parse_args(["job-plan", "--stage", "delfi", "end_motif", "--slurm"])
 
     assert plan_args.preset == "comparative"
+    assert execution_plan_args.execution == "per-sample"
+    assert execution_plan_args.slurm is True
     assert analyze_args.stages == ["diff", "report"]
     assert doctor_args.analysis_preset == "descriptive"
     assert frag_args.fragmentomics_scope == "panel"
+    assert job_args.stages == ["delfi", "end_motif"]
+    assert job_args.slurm is True
+
+
+def test_plan_dispatches_per_sample_execution_and_rejects_slurm_for_local(
+    modules, monkeypatch
+):
+    _, cftk = modules
+    calls = []
+    monkeypatch.setattr(cftk, "_write_job_plan", lambda args: calls.append(args) or {"ok": True})
+
+    result = cftk._cmd_plan(SimpleNamespace(execution="per-sample", slurm=True))
+
+    assert result == {"ok": True}
+    assert len(calls) == 1
+    with pytest.raises(SystemExit, match="requires --execution per-sample"):
+        cftk._cmd_plan(SimpleNamespace(execution="local", slurm=True))
 
 
 def test_delfi_uses_planned_cores_for_finaletoolkit_workers(monkeypatch, tmp_path):
@@ -456,7 +507,7 @@ def test_dmr_r_package_probe_is_actionable(modules, monkeypatch):
         "id": "analysis.dmr.r_packages",
         "status": "FAIL",
         "summary": "DMR R annotation packages are unavailable: Missing R packages: annotatr",
-        "remedy": "Install annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, and GenomicRanges in the active R environment.",
+        "remedy": "Install annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, and org.Hs.eg.db in the active R environment.",
     }]
 
 

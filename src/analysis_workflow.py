@@ -71,6 +71,7 @@ _DMR_R_PACKAGES = (
     "annotatr",
     "TxDb.Hsapiens.UCSC.hg38.knownGene",
     "GenomicRanges",
+    "org.Hs.eg.db",
 )
 _STAGE_ALIASES = {
     "diff": ("analysis.diff",),
@@ -536,7 +537,9 @@ def _stage_requirements(context, stage_id):
         requirements["inputs"].extend(get_matrix_path(paths, modality) for modality in modalities)
     elif kind == "dmr":
         requirements["executables"].update(("bedtools", "metilene", "Rscript"))
-        requirements["references"].append("R packages annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, and GenomicRanges")
+        requirements["references"].append(
+            "R packages annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, and org.Hs.eg.db"
+        )
         for sample in context["samples"]:
             requirements["inputs"].append(Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph")
     elif stage_id in _FRAGMENT_STAGES:
@@ -756,7 +759,7 @@ def _check_dmr_r_packages(checks):
     checks.fail(
         "analysis.dmr.r_packages",
         f"DMR R annotation packages are unavailable: {output[:300]}",
-        remedy="Install annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, and GenomicRanges in the active R environment.",
+        remedy="Install annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, and org.Hs.eg.db in the active R environment.",
     )
 
 
@@ -767,6 +770,7 @@ def analysis_doctor_checks(
     *,
     parallel_override=None,
     fragmentomics_scope=None,
+    adopt_existing=False,
 ):
     """Add read-only, workflow-specific checks to the core doctor object."""
     role_errors = []
@@ -870,7 +874,17 @@ def analysis_doctor_checks(
         maximum = resources["maximum_total_core_budget"]
         scheduler = resources["scheduler"]
         allocated = scheduler.get("allocated_cores")
-        if allocated is not None and maximum > allocated:
+        complete_for_adoption = adopt_existing and all(
+            not _core._validate_artifacts(_artifact_specs(context, stage))
+            for stage in stages
+        )
+        if complete_for_adoption:
+            checks.pass_(
+                "analysis.resource",
+                "All selected stages are complete; adoption-only validation does not require compute allocation",
+                details=resources,
+            )
+        elif allocated is not None and maximum > allocated:
             checks.fail(
                 "analysis.resource",
                 f"analysis CPU budget {maximum} exceeds scheduler allocation {allocated}",
@@ -1006,6 +1020,44 @@ def _load_previous(provenance, identity):
         except (OSError, ValueError, json.JSONDecodeError):
             continue
         if manifest.get("project_identity") == identity:
+            return manifest
+    return None
+
+
+def _load_previous_stage(provenance, identity, stage_id):
+    """Find a trusted completed stage across compatible workflow selections."""
+
+    provenance = Path(provenance).resolve()
+    current_identity = dict(identity)
+    current_identity.pop("options_sha256", None)
+    candidates = []
+    latest = provenance / "latest-analysis.json"
+    if latest.is_file():
+        try:
+            candidates.append(Path(json.loads(latest.read_text())["manifest"]))
+        except (OSError, KeyError, json.JSONDecodeError):
+            pass
+    candidates.extend(sorted((provenance / "analysis-runs").glob("*/run.json"), reverse=True))
+    seen = set()
+    trusted = {"complete", "resumed", "adopted"}
+    for candidate in candidates:
+        candidate = candidate.expanduser().resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            manifest = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        manifest_identity = dict(manifest.get("project_identity", {}))
+        manifest_identity.pop("options_sha256", None)
+        if manifest_identity != current_identity:
+            continue
+        stage = next(
+            (item for item in manifest.get("stages", []) if item.get("id") == stage_id),
+            None,
+        )
+        if stage and stage.get("status") in trusted:
             return manifest
     return None
 
@@ -1198,6 +1250,7 @@ def run(args):
         skip_picard_metrics=True, parallel=getattr(args, "parallel", None),
         analysis_stages=list(stages), analysis_only=True,
         fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
+        adopt_existing=bool(getattr(args, "adopt_existing", False)),
     )
     preflight = run_doctor(doctor_args)
     _core._atomic_write_json(run_dir / "doctor-before.json", preflight)
@@ -1241,6 +1294,20 @@ def run(args):
                 for spec in specs
                 if spec.get("owned", True) and Path(spec["path"]).exists()
             ]
+            compatible_stage = _load_previous_stage(provenance, identity, stage_id)
+            if compatible_stage and not issues:
+                stage_record["status"] = "resumed"
+                stage_record["finished_at"] = _utc_now()
+                stage_record["reused_from_run_id"] = compatible_stage.get("run_id")
+                _core._record_artifacts(stage_record, specs)
+                _core._append_event(
+                    events_path,
+                    "stage_reused",
+                    stage=stage_id,
+                    source_run_id=compatible_stage.get("run_id"),
+                )
+                _save_attempt(manifest, run_dir, provenance)
+                continue
             if getattr(args, "adopt_existing", False) and not issues:
                 stage_record["status"] = "adopted"
                 stage_record["finished_at"] = _utc_now()
