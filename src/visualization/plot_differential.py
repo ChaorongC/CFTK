@@ -234,7 +234,12 @@ def plot_heatmap(matrix_path, group_labels_raw, png_path, pdf_path,
     # Step 5: impute remaining NaN with column mean, then z-score
     # (matches original: SimpleImputer → StandardScaler pipeline on samples axis)
     pipe = make_pipeline(SimpleImputer(strategy="mean"), StandardScaler())
-    X    = pipe.fit_transform(sub.T).T   # fit on samples, transform features
+    # WPS matrices may legitimately contain repeated interval labels when
+    # overlapping windows are retained.  Passing ``sub.T`` as a DataFrame
+    # makes recent scikit-learn versions validate those labels as feature
+    # names and fail on duplicates.  The labels are only metadata here; use
+    # the numeric array for preprocessing so every retained row is preserved.
+    X    = pipe.fit_transform(sub.T.to_numpy(dtype=float)).T
     hm   = pd.DataFrame(X, index=sub.index, columns=sub.columns)
 
     col_colors = pd.Series(labels, index=ordered_cols, name="Group").map(palette)

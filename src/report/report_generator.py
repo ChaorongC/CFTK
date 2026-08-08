@@ -27,16 +27,18 @@ NOTE: Section 2.5 (Sample Correlation) has been removed.
 import base64
 import datetime
 import glob
+import html
 import json
 import os
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from report.mqc_extractor import (
     PLOTLY_SCRIPT,
-    load_mqc_data,
+    merge_mqc_data,
     mqc_bar_chart,
     mqc_heatmap,
     mqc_line_chart,
@@ -101,6 +103,92 @@ def _find_all(results_dir, *parts, pattern="*.png"):
     return sorted(glob.glob(os.path.join(results_dir, *parts, pattern)))
 
 
+def _sample_names(groups: dict) -> list[str]:
+    return [sample for members in groups.values() for sample in members]
+
+
+def _source_results_from_config(cfg: dict | None, results_dir: str) -> dict[str, str]:
+    """Infer prior CFTK result roots from canonical marked-BAM input paths.
+
+    A downstream-only project may use marked BAMs produced by another CFTK
+    project. This deliberately recognizes only the canonical CFTK hierarchy;
+    arbitrary BAM inputs do not cause external paths to be scanned.
+    """
+    if not cfg:
+        return {}
+    local_root = Path(results_dir).expanduser().resolve()
+    source_results: dict[str, str] = {}
+    for members in cfg.get("samples", {}).values():
+        for sample in members:
+            if sample.get("input_type") != "bam" or not sample.get("bam"):
+                continue
+            bam = Path(sample["bam"]).expanduser().resolve()
+            if bam.parent.name != "3_markdup" or bam.parent.parent.name != "1_process":
+                continue
+            source_root = bam.parent.parent.parent
+            if source_root.name != "results" or not source_root.is_dir() or source_root == local_root:
+                continue
+            source_results[str(sample["name"])] = str(source_root)
+    return source_results
+
+
+def _source_roots(rd: str, source_results: dict[str, str] | None) -> list[str]:
+    """Return current results followed by unique inferred source roots."""
+    roots = [rd]
+    for root in (source_results or {}).values():
+        root = str(root)
+        if root and root not in roots:
+            roots.append(root)
+    return roots
+
+
+def _read_qc_scores(
+    rd: str,
+    groups: dict,
+    source_results: dict[str, str] | None = None,
+) -> pd.DataFrame | None:
+    """Read one QC-score row per configured sample, preferring current results."""
+    samples = _sample_names(groups)
+    tables: dict[str, pd.DataFrame] = {}
+
+    def table_at(root: str) -> pd.DataFrame | None:
+        if root not in tables:
+            path = os.path.join(root, "2_qc", "qc_scores.tsv")
+            try:
+                tables[root] = pd.read_csv(path, sep="\t") if os.path.exists(path) else pd.DataFrame()
+            except Exception:
+                tables[root] = pd.DataFrame()
+        table = tables[root]
+        return table if not table.empty and "sample" in table.columns else None
+
+    rows = []
+    for sample in samples:
+        candidates = [rd]
+        source_root = (source_results or {}).get(sample)
+        if source_root and source_root not in candidates:
+            candidates.append(source_root)
+        for root in candidates:
+            table = table_at(root)
+            if table is None:
+                continue
+            matches = table[table["sample"].astype(str) == sample]
+            if not matches.empty:
+                rows.append(matches.iloc[0].to_dict())
+                break
+    return pd.DataFrame(rows) if rows else None
+
+
+def _as_qc_dataframe(scores: str | pd.DataFrame | None) -> pd.DataFrame | None:
+    if isinstance(scores, pd.DataFrame):
+        return scores.copy()
+    if not scores or not os.path.exists(scores):
+        return None
+    try:
+        return pd.read_csv(scores, sep="\t")
+    except Exception:
+        return None
+
+
 def _uid(prefix=""):
     import random, string
     safe = re.sub(r"[^a-zA-Z0-9]", "_", prefix)
@@ -161,6 +249,160 @@ def _note(msg: str, kind: str = "info") -> str:
         f'color:#3a4a5a;line-height:1.6;">'
         f'<strong style="color:{fg};">{icon} Note:</strong> {msg}</div>'
     )
+
+
+def _read_json(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _manifest_from_pointer(provenance, pointer_name, run_directory):
+    """Load the newest manifest named by a provenance pointer or run directory."""
+    pointer = _read_json(os.path.join(provenance, pointer_name))
+    if isinstance(pointer, dict) and pointer.get("manifest"):
+        manifest_path = pointer["manifest"]
+        if not os.path.isabs(manifest_path):
+            manifest_path = os.path.join(provenance, manifest_path)
+        manifest = _read_json(manifest_path)
+        if isinstance(manifest, dict):
+            return manifest
+
+    candidates = glob.glob(os.path.join(provenance, run_directory, "*", "run.json"))
+    if not candidates:
+        return None
+    return _read_json(max(candidates, key=os.path.getmtime))
+
+
+def _analysis_stage_records(provenance):
+    """Collect the newest trusted record for every downstream workflow stage."""
+    candidates = glob.glob(os.path.join(provenance, "analysis-runs", "*", "run.json"))
+    records = {}
+    trusted = {"complete", "resumed", "adopted"}
+    for path in sorted(candidates, key=os.path.getmtime, reverse=True):
+        manifest = _read_json(path)
+        if not isinstance(manifest, dict):
+            continue
+        for stage in manifest.get("stages", []):
+            stage_id = stage.get("id")
+            if not stage_id or stage_id in records or stage.get("status") not in trusted:
+                continue
+            records[stage_id] = {"stage": stage, "run_id": manifest.get("run_id", "")}
+    return records
+
+
+def _artifact_counts(stage):
+    """Return reported output/figure counts and currently missing required artifacts."""
+    expected = stage.get("expected", [])
+    outputs = stage.get("outputs")
+    figures = stage.get("figures")
+    if outputs is None:
+        outputs = [item for item in expected if item.get("role") != "figure"]
+    if figures is None:
+        figures = [item for item in expected if item.get("role") == "figure"]
+
+    missing = 0
+    for item in expected:
+        if not item.get("required", True):
+            continue
+        path = item.get("path")
+        if not path or not os.path.exists(path):
+            missing += 1
+        elif item.get("nonempty", True) and os.path.isfile(path) and os.path.getsize(path) == 0:
+            missing += 1
+    return len(outputs), len(figures), missing
+
+
+def _workflow_status(status):
+    colors = {
+        "complete": ("#e7f5ed", "#167346"),
+        "resumed": ("#e3f0f6", "#0b6e99"),
+        "adopted": ("#f5edff", "#6b3fa0"),
+        "failed": ("#fce8e6", "#b42318"),
+        "interrupted": ("#fff4e5", "#9a6700"),
+    }
+    background, color = colors.get(str(status).lower(), ("#eceff3", "#46586b"))
+    label = html.escape(str(status or "unknown"))
+    return (
+        f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
+        f'background:{background};color:{color};font-size:12.5px;font-weight:700;">{label}</span>'
+    )
+
+
+def _sec_workflow_summary(rd, groups):
+    """Render a manifest-aware overview of the complete CFTK workflow."""
+    provenance = os.path.join(rd, "provenance")
+    core = _manifest_from_pointer(provenance, "latest-run.json", "runs")
+    analysis_records = _analysis_stage_records(provenance)
+    rows = []
+
+    if isinstance(core, dict):
+        for stage in core.get("stages", []):
+            outputs, figures, missing = _artifact_counts(stage)
+            rows.append((
+                "Core processing / QC", stage.get("name", stage.get("id", "")),
+                stage.get("status", "unknown"), outputs, figures, missing,
+                core.get("run_id", ""),
+            ))
+    for stage_id, record in analysis_records.items():
+        stage = record["stage"]
+        outputs, figures, missing = _artifact_counts(stage)
+        rows.append((
+            "Downstream", stage.get("name", stage_id), stage.get("status", "unknown"),
+            outputs, figures, missing, record["run_id"],
+        ))
+
+    if not rows:
+        content = _missing(
+            "No CFTK run manifest was found. The report still discovers results from standard "
+            "output directories, but it cannot display manifest-backed stage status or provenance."
+        )
+    else:
+        table_rows = "".join(
+            "<tr style=\"border-top:1px solid var(--rule);\">"
+            f"<td style=\"padding:8px 10px;\">{html.escape(workflow)}</td>"
+            f"<td style=\"padding:8px 10px;color:var(--ink);font-weight:600;\">{html.escape(name)}</td>"
+            f"<td style=\"padding:8px 10px;text-align:center;\">{_workflow_status(status)}</td>"
+            f"<td style=\"padding:8px 10px;text-align:center;\">{outputs}</td>"
+            f"<td style=\"padding:8px 10px;text-align:center;\">{figures}</td>"
+            f"<td style=\"padding:8px 10px;text-align:center;\">{missing}</td>"
+            f"<td style=\"padding:8px 10px;font-family:var(--mono);font-size:12px;\">{html.escape(run_id)}</td>"
+            "</tr>"
+            for workflow, name, status, outputs, figures, missing, run_id in rows
+        )
+        content = (
+            '<div style="overflow-x:auto;border:1px solid var(--rule);border-radius:8px;">'
+            '<table style="width:100%;border-collapse:collapse;font-size:14px;min-width:880px;">'
+            '<thead><tr>'
+            '<th>Workflow</th><th>Stage</th><th>Status</th><th>Outputs</th>'
+            '<th>Figures</th><th>Missing required</th><th>Source run</th>'
+            '</tr></thead><tbody>' + table_rows + '</tbody></table></div>'
+        )
+
+    scope_note = ""
+    for record in analysis_records.values():
+        scope = record["stage"].get("fragmentomics_scope")
+        if isinstance(scope, dict) and scope.get("note"):
+            scope_note = _note(html.escape(str(scope["note"])))
+            break
+    sample_count = sum(len(members) for members in groups.values())
+    return f"""
+    <section class="section" id="workflow_summary">
+      <div class="section-header">
+        <span class="section-num">RUN</span>
+        <h2 class="section-title">Workflow Summary</h2>
+        <span class="section-tag">{sample_count} samples</span>
+      </div>
+      <p style="font-size:14.5px;color:#000000;margin-bottom:14px;">
+        Automatically discovered CFTK core-processing, QC, and downstream-stage records. Counts are
+        checked against the current files so this page distinguishes completed, resumed, adopted, and
+        missing artifacts.
+      </p>
+      {scope_note}
+      {content}
+    </section>"""
 
 
 # ── collapsible section helper ────────────────────────────────────────────────
@@ -244,11 +486,11 @@ def _cell(val, status: str, fmt=".1f", unit="%") -> str:
     )
 
 
-def _qc_table(scores_tsv: str) -> str:
-    if not os.path.exists(scores_tsv):
+def _qc_table(scores: str | pd.DataFrame | None) -> str:
+    df = _as_qc_dataframe(scores)
+    if df is None or df.empty:
         return _missing("QC scores not found — run <code>cftk qc -s 0</code> first")
     try:
-        df = pd.read_csv(scores_tsv, sep="\t")
         from analysis.qc_scorer import RULES
         active_rules = [r for r in RULES if r.weight > 0]
     except Exception as e:
@@ -526,18 +768,18 @@ def _stat_heat_cell(val, vmin, vmax, status=None) -> str:
     )
 
 
-def _fragment_peaks(rd, samples):
+def _fragment_peaks(rd, samples, source_results=None):
     """Return {sample: peak_bp} read from 2_qc/2_fragment_length/*.raw.csv."""
-    frag_dir = os.path.join(rd, "2_qc", "2_fragment_length")
     out = {}
-    files = sorted(glob.glob(os.path.join(frag_dir, "fragment_length.*.raw.csv")))
     name_to_path = {}
-    for fp in files:
-        stem = os.path.basename(fp)
-        name = (stem.replace("fragment_length.", "")
-                    .replace(".raw.csv", "")
-                    .replace(".markdup", ""))
-        name_to_path[name] = fp
+    for root in _source_roots(rd, source_results):
+        frag_dir = os.path.join(root, "2_qc", "2_fragment_length")
+        for fp in sorted(glob.glob(os.path.join(frag_dir, "fragment_length.*.raw.csv"))):
+            stem = os.path.basename(fp)
+            name = (stem.replace("fragment_length.", "")
+                        .replace(".raw.csv", "")
+                        .replace(".markdup", ""))
+            name_to_path.setdefault(name, fp)
     for s in samples:
         fp = name_to_path.get(s)
         if not fp:
@@ -559,7 +801,7 @@ def _fragment_peaks(rd, samples):
     return out
 
 
-def _sec_sample_statistics(rd, groups):
+def _sec_sample_statistics(rd, groups, source_results=None, qc_scores=None):
     """
     MultiQC-style per-sample statistics table. Pulls every metric available in
     2_qc/qc_scores.tsv and splits it into two column groups:
@@ -572,17 +814,11 @@ def _sec_sample_statistics(rd, groups):
     sample_to_group = {s: g for g, m in groups.items() for s in m}
 
     # fragment-length peak (bp) per sample, computed from the QC raw files
-    all_samples = [s for m in groups.values() for s in m]
-    frag_peaks = _fragment_peaks(rd, all_samples)
+    all_samples = _sample_names(groups)
+    frag_peaks = _fragment_peaks(rd, all_samples, source_results=source_results)
     has_peak = bool(frag_peaks)
 
-    qc_scores_tsv = os.path.join(rd, "2_qc", "qc_scores.tsv")
-    df = None
-    if os.path.exists(qc_scores_tsv):
-        try:
-            df = pd.read_csv(qc_scores_tsv, sep="\t")
-        except Exception:
-            df = None
+    df = _as_qc_dataframe(qc_scores)
 
     # ── fallback: no QC scores → clean grouped list ──────────────────────────
     if df is None or df.empty:
@@ -802,10 +1038,22 @@ def _mqc_key(mqc_data: dict, *candidates: str) -> str:
     for k in candidates:
         if k in mqc_data:
             return k
+        suffixed = sorted(
+            key for key in mqc_data
+            if key.startswith(f"{k}-") and key[len(k) + 1:].isdigit()
+        )
+        if suffixed:
+            return suffixed[0]
     return candidates[-1]   # last = used in _missing() error message
 
 
-def _sec_process(rd, groups=None, all_sample_names=None):
+def _sec_process(
+    rd,
+    groups=None,
+    all_sample_names=None,
+    source_results=None,
+    qc_scores=None,
+):
     """
     Part 1 — Data Processing.
     All interactive charts sourced from MultiQC HTML files via mqc_extractor.
@@ -813,14 +1061,18 @@ def _sec_process(rd, groups=None, all_sample_names=None):
     groups           = groups or {}
     all_sample_names = all_sample_names or [s for m in groups.values() for s in m]
 
-    # MultiQC HTML paths
-    trimming_html    = os.path.join(rd, "1_process", "1_trimming",   "multiqc", "multiqc_report.html")
-    alignment_html   = os.path.join(rd, "1_process", "2_alignment",  "multiqc", "multiqc_report.html")
-    methylation_html = os.path.join(rd, "1_process", "4_methylation","multiqc", "multiqc_report.html")
+    result_roots = _source_roots(rd, source_results)
 
-    trim_data  = load_mqc_data(trimming_html)
-    align_data = load_mqc_data(alignment_html)
-    meth_data  = load_mqc_data(methylation_html)
+    def _multiqc_paths(step):
+        return [
+            os.path.join(root, "1_process", step, "multiqc", "multiqc_report.html")
+            for root in result_roots
+            if os.path.exists(os.path.join(root, "1_process", step, "multiqc", "multiqc_report.html"))
+        ]
+
+    trim_data = merge_mqc_data(_multiqc_paths("1_trimming"))
+    align_data = merge_mqc_data(_multiqc_paths("2_alignment"))
+    meth_data = merge_mqc_data(_multiqc_paths("4_methylation"))
 
     def _no_mqc(step_dir: str) -> str:
         return _missing(
@@ -910,10 +1162,11 @@ def _sec_process(rd, groups=None, all_sample_names=None):
     # Confirmed from real MultiQC HTML: key is 'samtools_alignment_plot' (horizontal bar)
     # samtools-flagstat-dp and samtools-stats-dp are violin/table format, not bar charts
     align_key = next(
-        (k for k in ["samtools_alignment_plot",
-                     "samtools-flagstat-dp",
-                     "bwameth_alignment"]
-         if k in align_data),
+        (resolved for candidate in ["samtools_alignment_plot",
+                                    "samtools-flagstat-dp",
+                                    "bwameth_alignment"]
+         for resolved in [_mqc_key(align_data, candidate)]
+         if resolved in align_data),
         None,
     )
     if align_key:
@@ -930,12 +1183,12 @@ def _sec_process(rd, groups=None, all_sample_names=None):
 
     # Deduplication — MultiQC has no sambamba markdup module.
     # Parse .markdup_metrics.txt from 3_markdup/ + flagstat from 2_alignment/.
-    markdup_dir  = os.path.join(rd, "1_process", "3_markdup")
-    flagstat_dir = os.path.join(rd, "1_process", "2_alignment")
+    markdup_dirs = [os.path.join(root, "1_process", "3_markdup") for root in result_roots]
+    flagstat_dirs = [os.path.join(root, "1_process", "2_alignment") for root in result_roots]
     dup_chart    = markdup_dedup_chart(
-        markdup_dir,
+        markdup_dirs,
         samples=all_sample_names,
-        flagstat_dir=flagstat_dir,
+        flagstat_dir=flagstat_dirs,
         title="Deduplication (sambamba markdup)",
     )
 
@@ -956,14 +1209,24 @@ def _sec_process(rd, groups=None, all_sample_names=None):
     #      (populated when MethylDackel --txt is supported)
     #   3. Legacy fallback: show OT/OB coords table from stderr-only _mbias.txt
 
-    meth_dir      = os.path.join(rd, "1_process", "4_methylation")
-    mbias_tsv_dir = os.path.join(rd, "1_process", "4_methylation", "mbias_data")
-    if not os.path.isdir(mbias_tsv_dir):  # fallback for older runs
-        mbias_tsv_dir = os.path.join(rd, "2_qc", "mbias_data")
+    meth_dir = os.path.join(rd, "1_process", "4_methylation")
+    mbias_tsv_dirs = [
+        os.path.join(root, "1_process", "4_methylation", "mbias_data")
+        for root in result_roots
+    ]
+    if not any(os.path.isdir(path) for path in mbias_tsv_dirs):
+        mbias_tsv_dirs = [os.path.join(root, "2_qc", "mbias_data") for root in result_roots]
+    mbias_tsv_paths = [
+        os.path.join(source_results[sample], "1_process", "4_methylation", "mbias_data",
+                     f"{sample}_mbias.tsv")
+        for sample in all_sample_names
+        if source_results and sample in source_results
+    ]
 
     mbias_key = next(
-        (k for k in ["methyldackel_mbias", "bismark_mbias", "mbias"]
-         if k in meth_data),
+        (resolved for candidate in ["methyldackel_mbias", "bismark_mbias", "mbias"]
+         for resolved in [_mqc_key(meth_data, candidate)]
+         if resolved in meth_data),
         None,
     )
 
@@ -1011,17 +1274,19 @@ def _sec_process(rd, groups=None, all_sample_names=None):
         mbias_chart = mqc_mbias_chart(mbias_key, meth_data,
                                        title="M-bias (MethylDackel)")
 
-    elif os.path.isdir(mbias_tsv_dir) and any(
-        f.endswith("_mbias.tsv") for f in os.listdir(mbias_tsv_dir)
+    elif any(glob.glob(os.path.join(path, "*_mbias.tsv")) for path in mbias_tsv_dirs) or any(
+        os.path.exists(path) for path in mbias_tsv_paths
     ):
         # Path 2a: qc_parser already saved intermediate TSV files
-        mbias_chart = mbias_tsv_chart(mbias_tsv_dir,
-                                       title="M-bias (MethylDackel)")
+        mbias_chart = mbias_tsv_chart(
+            mbias_tsv_dirs, title="M-bias (MethylDackel)", tsv_paths=mbias_tsv_paths
+        )
 
     elif any(_has_tsv_mbias(p) for _, p in _mbias_txt_paths()):
         # Path 2b: _mbias.txt files have --txt TSV data.
         # Parse directly → save to mbias_tsv_dir → render.
         # Success = TSV file written with at least one data row (not NaN check).
+        mbias_tsv_dir = mbias_tsv_dirs[0]
         os.makedirs(mbias_tsv_dir, exist_ok=True)
         import sys as _sys
         _sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -1038,8 +1303,7 @@ def _sec_process(rd, groups=None, all_sample_names=None):
         except Exception as _e:
             print(f"[report] mbias parse error: {_e}")
         if tsv_written > 0:
-            mbias_chart = mbias_tsv_chart(mbias_tsv_dir,
-                                           title="M-bias (MethylDackel)")
+            mbias_chart = mbias_tsv_chart(mbias_tsv_dir, title="M-bias (MethylDackel)")
         else:
             mbias_chart = mbias_legacy_chart(meth_dir, samples=all_sample_names)
 
@@ -1048,8 +1312,7 @@ def _sec_process(rd, groups=None, all_sample_names=None):
         mbias_chart = mbias_legacy_chart(meth_dir, samples=all_sample_names)
 
     # ── 1.6 Sequencing QC Summary ─────────────────────────────────────────────────
-    qc_scores_tsv = os.path.join(rd, "2_qc", "qc_scores.tsv")
-    qc_table_html = _qc_table(qc_scores_tsv)
+    qc_table_html = _qc_table(qc_scores)
 
     return f"""
     <section class="section" id="part1">
@@ -1230,18 +1493,15 @@ def _frag_render() -> str:
 
 
 
-def _beta_density_table(scores_tsv: str, table_height: int = 420):
+def _beta_density_table(scores: str | pd.DataFrame | None, table_height: int = 420):
     """
     Render a compact per-sample table of the β M-score QC metric.
     Returns a (note_html, table_html) tuple so callers can place the
     explanatory note and the table independently (e.g. side-by-side layout).
-    Read from qc_scores.tsv.
+    Read from a QC-score table or dataframe.
     """
-    if not os.path.exists(scores_tsv):
-        return ("", "")
-    try:
-        df = pd.read_csv(scores_tsv, sep="\t")
-    except Exception:
+    df = _as_qc_dataframe(scores)
+    if df is None or df.empty:
         return ("", "")
 
     cols_needed = ["beta_M_score"]
@@ -1337,7 +1597,7 @@ def _beta_density_table(scores_tsv: str, table_height: int = 420):
     return (note_html, table_html)
 
 
-def _fragment_peak_table(rd, groups, table_height: int = 420):
+def _fragment_peak_table(rd, groups, table_height: int = 420, source_results=None):
     """
     Per-sample fragment-length peak table (Sample | Peak site), styled and
     behaving exactly like the β M-score table (sticky centered header, hover
@@ -1345,7 +1605,7 @@ def _fragment_peak_table(rd, groups, table_height: int = 420):
     Peak sites come from _fragment_peaks (2_qc/2_fragment_length/*.raw.csv).
     """
     samples = [s for m in groups.values() for s in m]
-    peaks = _fragment_peaks(rd, samples)
+    peaks = _fragment_peaks(rd, samples, source_results=source_results)
     if not peaks:
         return _missing(
             "Fragment-length peaks not found — run <code>cftk qc -s 2</code> "
@@ -1394,14 +1654,34 @@ def _fragment_peak_table(rd, groups, table_height: int = 420):
     )
 
 
-def _sec_qc(rd: str, groups: dict | None = None) -> str:
+def _sec_qc(
+    rd: str,
+    groups: dict | None = None,
+    source_results: dict[str, str] | None = None,
+    qc_scores: pd.DataFrame | None = None,
+) -> str:
     groups = groups or {}
 
-    # 2.1 Methylation Distribution — static PNG (scaled to fit a fixed-height box)
+    # 2.1 Methylation Distribution. Current cohort-level output wins; otherwise
+    # retain one selectable source image per configured BAM-backed sample.
+    local_meth = _find(rd, "2_qc", "1_methylation_distribution", pattern="*.png")
+    source_meth = []
+    if not local_meth:
+        for sample in _sample_names(groups):
+            root = (source_results or {}).get(sample)
+            image = (_find(root, "2_qc", "1_methylation_distribution", pattern="*.png")
+                     if root else None)
+            if image:
+                source_meth.append((sample, image))
+
     meth_img = _img_tag(
-        _find(rd, "2_qc", "1_methylation_distribution", pattern="*.png"),
+        local_meth or (source_meth[0][1] if len(source_meth) == 1 else None),
         "Methylation distribution",
         style="max-height:100%;max-width:100%;width:auto;object-fit:contain;display:block;margin:auto;")
+    meth_gallery = (
+        _dropdown_gallery("Sample", source_meth, uid="methylation_distribution")
+        if len(source_meth) > 1 else ""
+    )
 
     # 2.2 Fragment Length — interactive
     frag_chart = _frag_render()
@@ -1421,18 +1701,16 @@ def _sec_qc(rd: str, groups: dict | None = None) -> str:
                       open_=True)
 
     # Pre-compute collapsible blocks to avoid f-string nesting issues
-    qc_scores_tsv = os.path.join(rd, "2_qc", "qc_scores.tsv")
     _BETA_H = 420
-    beta_note, beta_table = _beta_density_table(qc_scores_tsv, table_height=_BETA_H)
+    beta_note, beta_table = _beta_density_table(qc_scores, table_height=_BETA_H)
 
-    meth_left = (
-        f'<div style="flex:1 1 58%;min-width:320px;">'
+    meth_body = (meth_gallery if meth_gallery else
         f'<div class="fig-card" style="height:{_BETA_H}px;display:flex;'
         f'flex-direction:column;margin:0;">'
         f'<div style="flex:1;min-height:0;display:flex;align-items:center;'
         f'justify-content:center;padding:14px;">{meth_img}</div>'
-        f'</div></div>'
-    )
+        f'</div>')
+    meth_left = f'<div style="flex:1 1 58%;min-width:320px;">{meth_body}</div>'
     meth_right = (
         f'<div style="flex:1 1 38%;min-width:280px;">{beta_table}</div>'
         if beta_table else ""
@@ -1443,7 +1721,9 @@ def _sec_qc(rd: str, groups: dict | None = None) -> str:
     )
     meth_block = _coll("β-value density plot", meth_row + beta_note, open_=True)
 
-    frag_table = _fragment_peak_table(rd, groups, table_height=_BETA_H)
+    frag_table = _fragment_peak_table(
+        rd, groups, table_height=_BETA_H, source_results=source_results
+    )
     frag_left = (
         f'<div style="flex:1 1 58%;min-width:320px;">'
         f'<div class="fig-card" style="height:{_BETA_H}px;display:flex;'
@@ -1728,6 +2008,7 @@ def _sec_fragmentomics(rd, groups):
                 )
         return html
 
+    occupancy_dir = os.path.join(rd, "4_fragmentomics", "occupancy")
     delfi_dir = os.path.join(rd, "4_fragmentomics", "delfi")
     em_dir    = os.path.join(rd, "4_fragmentomics", "end_motif")
     cl_dir    = os.path.join(rd, "4_fragmentomics", "cleavage")
@@ -1752,10 +2033,12 @@ def _sec_fragmentomics(rd, groups):
         <h2 class="section-title">Fragmentomics</h2>
         <span class="section-tag">frag</span>
       </div>
-      <h3 class="subsec-title" id="part4_1">4.1 DELFI</h3>
+      <h3 class="subsec-title" id="part4_1">4.1 Nucleosome Occupancy</h3>
+      {_sample_dd(occupancy_dir,"*_occupancy.png","_occupancy","occupancy") or "<p><em>No per-sample occupancy results.</em></p>"}
+      <h3 class="subsec-title" id="part4_2">4.2 DELFI</h3>
       {_sample_dd(delfi_dir,"*_delfi_genome.png","_delfi_genome","delfi",group_mean_pat="delfi_{grp}.png") or "<p><em>No per-sample DELFI results.</em></p>"}
       {_grp_compare(delfi_dir,None,"delfi_comparison.png") or ""}
-      <h3 class="subsec-title" id="part4_2">4.2 End Motif</h3>
+      <h3 class="subsec-title" id="part4_3">4.3 End Motif</h3>
       <p style="font-size:14.5px;color:#000000;margin-bottom:8px;">
         Top 20 4-mer end motifs, shown separately per group. Use each chart's
         dropdown to switch between the group mean and individual samples.
@@ -1767,9 +2050,9 @@ def _sec_fragmentomics(rd, groups):
         group distribution; individual samples are overlaid as points.
       </div>
       {_plotly_from_data("end_motif_box", height=480)}
-      <h3 class="subsec-title" id="part4_3">4.3 Cleavage</h3>
+      <h3 class="subsec-title" id="part4_4">4.4 Cleavage</h3>
       {_grp_compare(cl_dir,"cleavage_{grp}_samples.png","cleavage_comparison.png") or "<p><em>No cleavage results.</em></p>"}
-      <h3 class="subsec-title" id="part4_4">4.4 WPS</h3>
+      <h3 class="subsec-title" id="part4_5">4.5 WPS</h3>
       {_sample_dd(wps_dir,"*.wps_profile.png",".wps_profile","wps") or "<p><em>No WPS results.</em></p>"}
     </section>"""
 
@@ -1809,10 +2092,16 @@ def _sec_mesa(rd):
     </section>"""
 
 
-def _build_sidebar(rd, groups):
+def _build_sidebar(rd, groups, include_power=False):
+    power_link = (
+        '<a href="#part0" class="nav-link nav-top"><span class="dot"></span>Power Analysis</a>'
+        if include_power else ""
+    )
     return f"""
     <div class="nav-section">
       <div class="nav-label">Content</div>
+      <a href="#workflow_summary" class="nav-link nav-top"><span class="dot"></span>Workflow Summary</a>
+      {power_link}
       <a href="#part_overview" class="nav-link nav-top"><span class="dot"></span>Sample Statistics</a>
       <a href="#part1"  class="nav-link nav-top"></span>1 Processing</a>
       <a href="#part1_1" class="nav-link nav-sub"></span>1.1 Trimming</a>
@@ -1830,10 +2119,11 @@ def _build_sidebar(rd, groups):
       <a href="#part3_2" class="nav-link nav-sub"></span>3.2 Heatmap</a>
       <a href="#part3_3" class="nav-link nav-sub"></span>3.3 DMR</a>
       <a href="#part4"  class="nav-link nav-top"></span>4 Fragmentomics</a>
-      <a href="#part4_1" class="nav-link nav-sub"></span>4.1 DELFI</a>
-      <a href="#part4_2" class="nav-link nav-sub"></span>4.2 End Motif</a>
-      <a href="#part4_3" class="nav-link nav-sub"></span>4.3 Cleavage</a>
-      <a href="#part4_4" class="nav-link nav-sub"></span>4.4 WPS</a>
+      <a href="#part4_1" class="nav-link nav-sub"></span>4.1 Occupancy</a>
+      <a href="#part4_2" class="nav-link nav-sub"></span>4.2 DELFI</a>
+      <a href="#part4_3" class="nav-link nav-sub"></span>4.3 End Motif</a>
+      <a href="#part4_4" class="nav-link nav-sub"></span>4.4 Cleavage</a>
+      <a href="#part4_5" class="nav-link nav-sub"></span>4.5 WPS</a>
       <a href="#part5"  class="nav-link nav-top"></span>5 MESA</a>
       <a href="#part5_1" class="nav-link nav-sub"></span>5.1 Performance</a>
       <a href="#part5_2" class="nav-link nav-sub"></span>5.2 ROC</a>
@@ -1880,6 +2170,8 @@ def generate_report(args):
             groups[g] = []
 
     all_sample_names = [s for members in groups.values() for s in members]
+    source_results = _source_results_from_config(cfg, rd)
+    qc_scores = _read_qc_scores(rd, groups, source_results=source_results)
     os.makedirs(out_dir, exist_ok=True)
 
     # ── Build interactive chart data ──────────────────────────────────────────
@@ -1895,6 +2187,7 @@ def generate_report(args):
             q_thr=q_thr,
             frag_len=frag_len,
             matrix_path=matrix_path,
+            source_results=source_results,
         )
     except Exception as e:
         import traceback
@@ -1931,11 +2224,24 @@ def generate_report(args):
     data_js = "\n".join(per_key_scripts)
 
     # ── Build HTML ────────────────────────────────────────────────────────────
-    sidebar  = _build_sidebar(rd, groups)
+    include_power = bool(glob.glob(os.path.join(rd, "0_power", "*")))
+    sidebar  = _build_sidebar(rd, groups, include_power=include_power)
     sections = (
-        _sec_sample_statistics(rd, groups)
-        + _sec_process(rd, groups=groups, all_sample_names=all_sample_names)
-        + _sec_qc(rd, groups=groups)
+        _sec_workflow_summary(rd, groups)
+        + (_sec_power(rd) if include_power else "")
+        + _sec_sample_statistics(
+            rd, groups, source_results=source_results, qc_scores=qc_scores
+        )
+        + _sec_process(
+            rd,
+            groups=groups,
+            all_sample_names=all_sample_names,
+            source_results=source_results,
+            qc_scores=qc_scores,
+        )
+        + _sec_qc(
+            rd, groups=groups, source_results=source_results, qc_scores=qc_scores
+        )
         + _sec_differential(rd)
         + _sec_fragmentomics(rd, groups)
         + _sec_mesa(rd)

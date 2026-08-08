@@ -35,6 +35,23 @@ def _disp(msg):
     print(f"@{time.asctime()}\t{msg}", file=sys.stderr)
 
 
+def _load_matrices(paths):
+    """Load feature matrices with positional, unique in-memory feature labels.
+
+    Targeted WPS matrices can legitimately retain overlapping windows with the
+    same ``chr:start-end`` identifier.  Those labels are useful metadata in
+    TSVs but become DataFrame column names after transpose, where recent
+    scikit-learn/Narwhals versions require uniqueness.  Positional labels keep
+    every row/value and avoid changing the scientific feature set.
+    """
+    matrices = []
+    for filepath in paths:
+        matrix = pd.read_csv(filepath, sep="\t", index_col=0).T
+        matrix.columns = pd.RangeIndex(matrix.shape[1])
+        matrices.append(matrix)
+    return matrices
+
+
 # ── classifier registry ───────────────────────────────────────────────────────
 
 def _build_clf_dist():
@@ -152,7 +169,7 @@ def _run_multimodal_loocv(X_list, clfs, y, top_n):
 def run_modality_performance(args):
     """Evaluate per-modality classification performance and save TSV."""
     os.makedirs(args.output_dir, exist_ok=True)
-    matrices   = [pd.read_csv(f, sep="\t", index_col=0).T for f in args.infile]
+    matrices   = _load_matrices(args.infile)
     sample_ids = matrices[0].index.tolist()
     label_df   = pd.read_table(args.label, header=None, index_col=0)
     label_df.columns = ["label"]
@@ -175,7 +192,7 @@ def run_modality_performance(args):
 def run_mesa_model(args, performance=None):
     """Train full MESA stacking model and save pickle."""
     os.makedirs(args.output_dir, exist_ok=True)
-    matrices   = [pd.read_csv(f, sep="\t", index_col=0).T for f in args.infile]
+    matrices   = _load_matrices(args.infile)
     sample_ids = matrices[0].index.tolist()
     label_df   = pd.read_table(args.label, header=None, index_col=0)
     label_df.columns = ["label"]
@@ -202,7 +219,7 @@ def run_mesa_loocv(args, performance=None):
     Multimodal: manual LOO loop with MESA.fit — matches original mesa_loocv.py.
     """
     os.makedirs(args.output_dir, exist_ok=True)
-    matrices   = [pd.read_csv(f, sep="\t", index_col=0).T for f in args.infile]
+    matrices   = _load_matrices(args.infile)
     sample_ids = matrices[0].index.tolist()
     # align matrices to same sample order
     matrices   = [m.reindex(sample_ids) for m in matrices]

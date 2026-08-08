@@ -46,6 +46,35 @@ _GROUP_COLORS = ["#1e5fa0", "#c0392b", "#1a9641", "#9b59b6", "#e67e22"]
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _source_roots(source_results: dict[str, str] | None) -> list[str]:
+    """Return unique source result roots in configured sample order."""
+    roots = []
+    for root in (source_results or {}).values():
+        root = str(root)
+        if root and root not in roots:
+            roots.append(root)
+    return roots
+
+
+def _fragment_raw_files(
+    rd: str,
+    source_results: dict[str, str] | None,
+    sample_names: list[str],
+) -> list[str]:
+    """Find one fragment-length CSV per configured sample, preferring ``rd``."""
+    selected: dict[str, str] = {}
+    wanted = set(sample_names)
+    for root in [rd] + _source_roots(source_results):
+        frag_dir = os.path.join(root, "2_qc", "2_fragment_length")
+        for path in sorted(glob.glob(os.path.join(frag_dir, "fragment_length.*.raw.csv"))):
+            name = (os.path.basename(path).replace("fragment_length.", "")
+                    .replace(".raw.csv", "").replace(".markdup", ""))
+            if (not wanted or name in wanted) and name not in selected:
+                selected[name] = path
+    return [selected[name] for name in sample_names if name in selected] + [
+        path for name, path in selected.items() if name not in sample_names
+    ]
+
 def _layout(title="", xaxis_title="", yaxis_title="", height=380, **kw) -> dict:
     base = {
         "title":  {"text": title, "font": {"size": 13, "color": "#000000"}},
@@ -90,7 +119,12 @@ def _missing_fig(msg: str, key: str) -> dict:
 
 # ── 2.2 Fragment Length ────────────────────────────────────────────────────────
 
-def build_fragment_length(rd: str, data_dir: str, group_labels: dict) -> dict:
+def build_fragment_length(
+    rd: str,
+    data_dir: str,
+    group_labels: dict,
+    source_results: dict[str, str] | None = None,
+) -> dict:
     """
     Read all fragment_length.*.raw.csv files from 2_qc/2_fragment_length/.
     Produce a line chart with:
@@ -98,8 +132,8 @@ def build_fragment_length(rd: str, data_dir: str, group_labels: dict) -> dict:
       - group-mean traces (visible by default)
       - overall mean trace
     """
-    frag_dir = os.path.join(rd, "2_qc", "2_fragment_length")
-    raw_files = sorted(glob.glob(os.path.join(frag_dir, "fragment_length.*.raw.csv")))
+    sample_names = [sample for members in group_labels.values() for sample in members]
+    raw_files = _fragment_raw_files(rd, source_results, sample_names)
     if not raw_files:
         return _save(data_dir, "fragment_length",
                      _missing_fig("Fragment length data not found — run cftk qc -s 2", "fragment_length"))
@@ -205,7 +239,12 @@ def build_fragment_length(rd: str, data_dir: str, group_labels: dict) -> dict:
 
 # ── 2.3 Dinucleotide Frequency ────────────────────────────────────────────────
 
-def build_dinucleotide(rd: str, data_dir: str, frag_len: int = 167) -> dict:
+def build_dinucleotide(
+    rd: str,
+    data_dir: str,
+    frag_len: int = 167,
+    source_results: dict[str, str] | None = None,
+) -> dict:
     """
     Read dinucleotide.all_fragment_{pattern}.txt files.
     Column layout (bedtools nuc output):
@@ -214,8 +253,7 @@ def build_dinucleotide(rd: str, data_dir: str, frag_len: int = 167) -> dict:
 
     Aggregates AA/AT/TA/TT → AT-rich group, GG/GC/CG/CC → GC-rich group.
     """
-    dinu_dir = os.path.join(rd, "2_qc", "3_dinucleotide_freq")
-    prefix   = os.path.join(dinu_dir, "dinucleotide")
+    roots = [rd] + _source_roots(source_results)
 
     groups_map = {
         "AA/AT/TA/TT": ["AA", "AT", "TA", "TT"],
@@ -226,46 +264,52 @@ def build_dinucleotide(rd: str, data_dir: str, frag_len: int = 167) -> dict:
     for label, patterns in groups_map.items():
         frames = []
         for pat in patterns:
-            fp = f"{prefix}.all_fragment_{pat}.txt"
-            if not os.path.exists(fp):
-                continue
-            try:
-                # bedtools nuc column names depend on input BED column count.
-                # pos col = *_usercol with integer values in [-200, 200]
-                # count col = last *_user_patt_count
-                header = pd.read_table(fp, nrows=5)
-                cols = list(header.columns)
-                usercols   = [c for c in cols if c.endswith("_usercol")]
-                count_cols = [c for c in cols if c.endswith("_user_patt_count")]
-                if not usercols or not count_cols:
-                    continue
-                # Identify position column: values are integers in [-200, 200]
-                pos_col = None
-                for uc in usercols:
-                    sample_vals = pd.to_numeric(header[uc], errors="coerce").dropna()
-                    if len(sample_vals) > 0:
-                        vmin, vmax = sample_vals.min(), sample_vals.max()
-                        if -200 <= vmin and vmax <= 200:
-                            pos_col = uc
-                            break
-                if pos_col is None:
-                    pos_col = usercols[0]  # fallback
-                count_col = count_cols[-1]
-                t = (
-                    pd.read_table(fp, usecols=[pos_col, count_col])
-                    .apply(pd.to_numeric, errors="coerce")
-                    .dropna()
+            for root in roots:
+                fp = os.path.join(
+                    root, "2_qc", "3_dinucleotide_freq",
+                    f"dinucleotide.all_fragment_{pat}.txt",
                 )
-                grp = t.groupby(pos_col)[count_col].sum()
-                frames.append(grp)
-            except Exception:
-                pass
+                if not os.path.exists(fp):
+                    continue
+                try:
+                    # bedtools nuc column names depend on input BED column count.
+                    # pos col = *_usercol with integer values in [-200, 200]
+                    # count col = last *_user_patt_count
+                    header = pd.read_table(fp, nrows=5)
+                    cols = list(header.columns)
+                    usercols = [c for c in cols if c.endswith("_usercol")]
+                    count_cols = [c for c in cols if c.endswith("_user_patt_count")]
+                    if not usercols or not count_cols:
+                        continue
+                    # Identify position column: values are integers in [-200, 200]
+                    pos_col = None
+                    for uc in usercols:
+                        sample_vals = pd.to_numeric(header[uc], errors="coerce").dropna()
+                        if len(sample_vals) > 0:
+                            vmin, vmax = sample_vals.min(), sample_vals.max()
+                            if -200 <= vmin and vmax <= 200:
+                                pos_col = uc
+                                break
+                    if pos_col is None:
+                        pos_col = usercols[0]
+                    count_col = count_cols[-1]
+                    table = (
+                        pd.read_table(fp, usecols=[pos_col, count_col])
+                        .apply(pd.to_numeric, errors="coerce")
+                        .dropna()
+                    )
+                    frames.append(table.groupby(pos_col)[count_col].sum())
+                except Exception:
+                    pass
         if frames:
             combined[label] = pd.concat(frames, axis=1).sum(axis=1).sort_index()
 
     if not combined:
         return _save(data_dir, "dinucleotide",
-                     _missing_fig("Dinucleotide data not found — run cftk qc -s 3", "dinucleotide"))
+                     _missing_fig(
+                         "Dinucleotide QC was not produced in the available results; run cftk qc -s 3 to generate it",
+                         "dinucleotide",
+                     ))
 
     # Normalise to %
     total = sum(s.sum() for s in combined.values())
@@ -1596,7 +1640,8 @@ def build_end_motif_box(rd: str, data_dir: str, group_labels: dict,
 def build_all(rd: str, data_dir: str, group_labels: dict,
               group_a: str = "", group_b: str = "",
               q_thr: float = 0.05, frag_len: int = 167,
-              matrix_path: str | None = None) -> dict[str, dict]:
+              matrix_path: str | None = None,
+              source_results: dict[str, str] | None = None) -> dict[str, dict]:
     """
     Build all interactive chart data files. Returns dict key→figure.
     Missing data is handled gracefully (produces a placeholder figure).
@@ -1609,10 +1654,14 @@ def build_all(rd: str, data_dir: str, group_labels: dict,
     results = {}
 
     # 2.2 Fragment Length
-    results["fragment_length"] = build_fragment_length(rd, data_dir, group_labels)
+    results["fragment_length"] = build_fragment_length(
+        rd, data_dir, group_labels, source_results=source_results
+    )
 
     # 2.3 Dinucleotide
-    results["dinucleotide"] = build_dinucleotide(rd, data_dir, frag_len=frag_len)
+    results["dinucleotide"] = build_dinucleotide(
+        rd, data_dir, frag_len=frag_len, source_results=source_results
+    )
 
     # 3.1 PCA
     results["pca"] = build_pca(rd, data_dir, group_labels)

@@ -24,6 +24,7 @@ def run_end_motif(args):
     minf    = getattr(args, "min_frag", 100)
     maxf    = getattr(args, "max_frag", 220)
     extra   = getattr(args, "em_extra", "")
+    cores   = getattr(args, "cores", 1) or 1
     workers = getattr(args, "parallel",  1) or 1
 
     def _process_one(bam):
@@ -35,7 +36,7 @@ def run_end_motif(args):
         cmd = (
             f"finaletoolkit end-motifs "
             f"-k {kmer} -min {minf} -max {maxf} "
-            f"-o {out_tsv} -q {mapq} -v {extra} "
+            f"-o {out_tsv} -q {mapq} -w {cores} -v {extra} "
             f"{bam} {args.genome2bit}"
         )
         _run(cmd, "end_motif")

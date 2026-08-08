@@ -39,9 +39,9 @@ also show the target identity and derived interval counts after execution. Use
 ``--fragmentomics-scope genome`` only for validated whole-genome inputs, or
 ``--fragmentomics-scope panel`` for a custom targeted profile.
 
-For the DMR preset, preflight verifies that ``Rscript`` can load the three
-packages used by CFTK's bundled annotation script: ``annotatr``,
-``TxDb.Hsapiens.UCSC.hg38.knownGene``, and ``GenomicRanges``.
+For the DMR preset, preflight verifies that ``Rscript`` can load the packages
+used by CFTK's bundled annotation script: ``annotatr``, ``GenomicRanges``,
+``org.Hs.eg.db``, and ``TxDb.Hsapiens.UCSC.hg38.knownGene``.
 
 .. code-block:: bash
 
@@ -88,13 +88,49 @@ locations:
   ``results/5_mesa/``;
 - report: ``results/report/report.html``.
 
+Optional Per-Sample Jobs
+------------------------
+
+The default execution model is local, bounded in-process parallelism through
+``--parallel``. For an expensive fragmentomics stage, generate a per-sample
+task plan instead:
+
+.. code-block:: bash
+
+   cftk plan --stage delfi end_motif --execution per-sample
+
+Each generated task runs one sample with ``--parallel 1 --no-finalize`` and
+therefore has its own terminal status, command-ledger entries, and retry
+boundary. After every task for a stage succeeds, its generated finalizer checks
+the full cohort, creates any cohort matrix/figures, and adopts the result into
+the standard immutable ``cftk analyze`` manifest. Do not run a finalizer after
+a failed or incomplete sample task.
+
+The plan is scheduler-neutral: its executable scripts can be submitted by
+Slurm, PBS, SGE, or an institutional workflow engine. Clusters using Slurm may
+request an array helper:
+
+.. code-block:: bash
+
+   cftk plan --stage delfi --execution per-sample --slurm
+   CFTK_SBATCH_ARGS='--cpus-per-task=8 --mem=48G --time=12:00:00' \\
+     results/provenance/job-plans/fragmentomics-*/slurm/submit.sh
+
+The helper is written but never submitted automatically. Set its resource
+arguments from the chosen stage and local policy. It submits one array element
+per sample and a success-gated finalizer job. This does not change FinaleToolkit
+parameters or CFTK output schemas; it only moves independent sample work into
+separate scheduler jobs.
+
 Resume And Method Boundaries
 ----------------------------
 
-Successful stages resume only when the configuration, lock, selected preset,
-resource options, prior stage state, and required artifacts agree. Existing
-untracked outputs require ``--adopt-existing`` to be validated before use;
-partial retry outputs are quarantined under ``results/provenance/quarantine/``.
+Successful stages resume when the configuration, lock, and required artifacts
+agree. A complete stage recorded by any compatible prior analysis selection is
+validated and reused automatically when a later full suite includes it.
+Existing untracked outputs with no trusted stage manifest still require
+``--adopt-existing``; partial retry outputs are quarantined under
+``results/provenance/quarantine/``.
 
 This orchestration layer does not change the scientific implementation of its
 stages. The current differential command uses feature-level Mann-Whitney tests

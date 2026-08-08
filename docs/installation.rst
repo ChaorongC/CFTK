@@ -188,8 +188,8 @@ Many workflows call command-line tools that Python packaging does not install:
 - ``DANPOS``
 - UCSC tools such as ``wigToBigWig`` and ``bigWigAverageOverBed``
 - ``metilene`` for DMR analysis
-- R packages used by DMR annotation, including ``annotatr`` and hg38 annotation
-  packages
+- R packages used by DMR annotation, including ``annotatr``, ``GenomicRanges``,
+  ``org.Hs.eg.db``, and the hg38 ``TxDb`` annotation package
 
 The pinned environment installs the core step 1-4 tools. Install advanced
 workflow tools separately in the compute environment where those workflows

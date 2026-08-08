@@ -2,10 +2,13 @@
 mqc_extractor.py — Extract MultiQC HTML compressed plot data and convert to
                    Plotly.js interactive charts for the cftk report.
 
-MultiQC stores all plot data as gzip+base64 JSON in a DOM element:
+MultiQC stores all plot data as Base64-compressed JSON in a DOM element:
   <script id="mqc_compressed_plotdata" type="application/json">
-    H4sIAA...base64...
+    N4IgZghg...base64...
   </script>
+
+Current MultiQC releases use LZString Base64 compression. Older reports used
+gzip+Base64, which remains supported for compatibility.
 
 This module:
   1. Loads and decompresses that data (with file-level caching).
@@ -37,6 +40,191 @@ import re
 # ── file-level cache: html_path → decompressed dict ──────────────────────────
 _MQC_CACHE: dict[str, dict] = {}
 
+_LZSTRING_BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+_LZSTRING_INDEX = {char: index for index, char in enumerate(_LZSTRING_BASE64)}
+
+
+def _lzstring_decompress_from_base64(value: str) -> str | None:
+    """Decode ``LZString.decompressFromBase64`` using only the stdlib."""
+    value = "".join(value.split())
+    if not value:
+        return ""
+    if any(char not in _LZSTRING_INDEX for char in value):
+        return None
+
+    value_len = len(value)
+    data_value = _LZSTRING_INDEX[value[0]]
+    data_position = 32
+    data_index = 1
+
+    def read_bits(width: int) -> int | None:
+        nonlocal data_value, data_position, data_index
+        bits = 0
+        power = 1
+        limit = 1 << width
+        while power != limit:
+            bit = data_value & data_position
+            data_position >>= 1
+            if data_position == 0:
+                data_position = 32
+                if data_index >= value_len:
+                    return None
+                data_value = _LZSTRING_INDEX[value[data_index]]
+                data_index += 1
+            if bit:
+                bits |= power
+            power <<= 1
+        return bits
+
+    dictionary: dict[int, str] = {0: "0", 1: "1", 2: "2"}
+    next_code = read_bits(2)
+    if next_code is None:
+        return None
+    if next_code == 0:
+        char_code = read_bits(8)
+    elif next_code == 1:
+        char_code = read_bits(16)
+    elif next_code == 2:
+        return ""
+    else:
+        return None
+    if char_code is None:
+        return None
+
+    dictionary[3] = chr(char_code)
+    w = dictionary[3]
+    result = [w]
+    dict_size = 4
+    enlarge_in = 4
+    num_bits = 3
+
+    while True:
+        code = read_bits(num_bits)
+        if code is None:
+            return None
+        if code == 0:
+            char_code = read_bits(8)
+            if char_code is None:
+                return None
+            dictionary[dict_size] = chr(char_code)
+            code = dict_size
+            dict_size += 1
+            enlarge_in -= 1
+        elif code == 1:
+            char_code = read_bits(16)
+            if char_code is None:
+                return None
+            dictionary[dict_size] = chr(char_code)
+            code = dict_size
+            dict_size += 1
+            enlarge_in -= 1
+        elif code == 2:
+            return "".join(result)
+
+        if enlarge_in == 0:
+            enlarge_in = 1 << num_bits
+            num_bits += 1
+
+        if code in dictionary:
+            entry = dictionary[code]
+        elif code == dict_size:
+            entry = w + w[0]
+        else:
+            return None
+
+        result.append(entry)
+        dictionary[dict_size] = w + entry[0]
+        dict_size += 1
+        enlarge_in -= 1
+        w = entry
+
+        if enlarge_in == 0:
+            enlarge_in = 1 << num_bits
+            num_bits += 1
+
+
+def _decode_mqc_payload(encoded: str) -> dict | None:
+    """Return a decoded MultiQC payload, accepting current and legacy formats."""
+    errors = []
+    try:
+        decoded = _lzstring_decompress_from_base64(encoded)
+        if decoded is not None:
+            payload = json.loads(decoded)
+            if isinstance(payload, dict):
+                return payload
+            errors.append("LZString payload is not a JSON object")
+    except Exception as exc:
+        errors.append(f"LZString: {exc}")
+
+    try:
+        raw = base64.b64decode(encoded)
+        payload = json.loads(gzip.decompress(raw).decode("utf-8"))
+        if isinstance(payload, dict):
+            return payload
+        errors.append("gzip payload is not a JSON object")
+    except Exception as exc:
+        errors.append(f"gzip: {exc}")
+
+    raise ValueError("; ".join(errors) or "unsupported MultiQC payload")
+
+
+def _normalise_mqc_payload(data: dict) -> dict:
+    """Normalise legacy MultiQC plot records to this module's renderer schema."""
+    for payload in data.values():
+        if not isinstance(payload, dict):
+            continue
+        plot_type = payload.get("plot_type")
+        datasets = payload.get("datasets")
+
+        # MultiQC 1.10 writes bar and line datasets as lists of lists, with
+        # sample labels parallel to the bar datasets and point pairs in ``data``.
+        if plot_type == "bar_graph" and isinstance(datasets, list) and datasets and isinstance(datasets[0], list):
+            sample_sets = payload.get("samples", [])
+            if sample_sets and not isinstance(sample_sets[0], (list, tuple)):
+                sample_sets = [sample_sets] * len(datasets)
+            payload["datasets"] = [
+                {
+                    "samples": sample_sets[index] if index < len(sample_sets) else [],
+                    "cats": categories,
+                }
+                for index, categories in enumerate(datasets)
+            ]
+        elif plot_type == "xy_line" and isinstance(datasets, list) and datasets and isinstance(datasets[0], list):
+            categories = payload.get("config", {}).get("categories", [])
+
+            def normalised_pairs(line: dict) -> list:
+                pairs = line.get("pairs", line.get("data", []))
+                if not pairs or isinstance(pairs[0], (list, tuple)):
+                    return pairs
+                x_values = categories if len(categories) == len(pairs) else list(range(1, len(pairs) + 1))
+                return [[x, y] for x, y in zip(x_values, pairs)]
+
+            payload["datasets"] = [
+                {
+                    "label": f"Dataset {index + 1}",
+                    "lines": [
+                        {
+                            **line,
+                            "pairs": normalised_pairs(line),
+                        }
+                        for line in lines
+                    ],
+                }
+                for index, lines in enumerate(datasets)
+            ]
+        elif plot_type == "heatmap" and "datasets" not in payload:
+            xcats = payload.get("xcats", [])
+            ycats = payload.get("ycats", [])
+            rows = [[0] * len(xcats) for _ in ycats]
+            for point in payload.get("data", []):
+                if not isinstance(point, list) or len(point) < 3:
+                    continue
+                x, y, value = point[:3]
+                if isinstance(x, int) and isinstance(y, int) and 0 <= y < len(rows) and 0 <= x < len(xcats):
+                    rows[y][x] = value
+            payload["datasets"] = [{"xcats": xcats, "ycats": ycats, "rows": rows}]
+    return data
+
 
 def load_mqc_data(html_path: str) -> dict:
     """
@@ -54,25 +242,93 @@ def load_mqc_data(html_path: str) -> dict:
         with open(html_path, encoding="utf-8", errors="replace") as f:
             content = f.read()
 
-        match = re.search(
+        matches = list(re.finditer(
             r'id=["\']mqc_compressed_plotdata["\'][^>]*>(.*?)</(?:script|div)',
-            content,
-            re.DOTALL,
-        )
-        if not match:
+            content, re.DOTALL,
+        ))
+        if not matches:
             _MQC_CACHE[html_path] = {}
             return {}
 
-        b64_data = match.group(1).strip()
-        raw      = base64.b64decode(b64_data)
-        data     = json.loads(gzip.decompress(raw).decode("utf-8"))
-        _MQC_CACHE[html_path] = data
-        return data
+        decoded_empty = None
+        errors = []
+        for match in matches:
+            try:
+                data = _normalise_mqc_payload(_decode_mqc_payload(match.group(1).strip()))
+                if data:
+                    _MQC_CACHE[html_path] = data
+                    return data
+                decoded_empty = data
+            except Exception as exc:
+                errors.append(str(exc))
+        if decoded_empty is not None:
+            _MQC_CACHE[html_path] = decoded_empty
+            return decoded_empty
+        raise ValueError("; ".join(errors) or "no usable MultiQC payload")
 
     except Exception as e:
         print(f"[mqc_extractor] WARNING: could not load {html_path}: {e}")
         _MQC_CACHE[html_path] = {}
         return {}
+
+
+def _merge_mqc_dataset(target: dict, source: dict) -> None:
+    """Merge the bar, line, or heatmap shapes consumed by this report."""
+    if "lines" in source:
+        target.setdefault("lines", []).extend(source.get("lines", []))
+        return
+
+    if "ycats" in source and "rows" in source:
+        target.setdefault("ycats", []).extend(source.get("ycats", []))
+        target.setdefault("rows", []).extend(source.get("rows", []))
+        return
+
+    if "samples" not in source or "cats" not in source:
+        return
+
+    target.setdefault("samples", []).extend(source.get("samples", []))
+    target_cats = target.setdefault("cats", [])
+    by_name = {str(cat.get("name", index)): cat for index, cat in enumerate(target_cats)}
+    for index, source_cat in enumerate(source.get("cats", [])):
+        key = str(source_cat.get("name", index))
+        target_cat = by_name.get(key)
+        if target_cat is None:
+            target_cat = {
+                name: value[:] if isinstance(value, list) else value
+                for name, value in source_cat.items()
+            }
+            target_cats.append(target_cat)
+            by_name[key] = target_cat
+            continue
+        for field in ("data", "data_pct"):
+            if field in source_cat:
+                target_cat.setdefault(field, []).extend(source_cat[field])
+
+
+def merge_mqc_dicts(mqc_dicts: list[dict]) -> dict:
+    """Merge MultiQC plot dictionaries while retaining the first plot metadata."""
+    merged: dict = {}
+    for mqc_data in mqc_dicts:
+        for key, payload in mqc_data.items():
+            if not isinstance(payload, dict):
+                continue
+            if key not in merged:
+                merged[key] = json.loads(json.dumps(payload))
+                continue
+
+            target_sets = merged[key].get("datasets", [])
+            source_sets = payload.get("datasets", [])
+            for index, source_set in enumerate(source_sets):
+                if index >= len(target_sets):
+                    target_sets.append(json.loads(json.dumps(source_set)))
+                elif isinstance(source_set, dict) and isinstance(target_sets[index], dict):
+                    _merge_mqc_dataset(target_sets[index], source_set)
+    return merged
+
+
+def merge_mqc_data(html_paths: list[str]) -> dict:
+    """Load and merge the readable MultiQC reports in ``html_paths``."""
+    return merge_mqc_dicts([load_mqc_data(path) for path in html_paths])
 
 
 # ── Plotly CDN (injected once by report_generator into <head>) ────────────────
@@ -159,6 +415,17 @@ def _missing(msg: str) -> str:
     )
 
 
+def _resolve_plot_key(plot_key: str, mqc_data: dict) -> str:
+    """Resolve the ``-1`` suffix used by newer MultiQC embedded plot keys."""
+    if plot_key in mqc_data:
+        return plot_key
+    matches = sorted(
+        key for key in mqc_data
+        if key.startswith(f"{plot_key}-") and key[len(plot_key) + 1:].isdigit()
+    )
+    return matches[0] if matches else plot_key
+
+
 # ── mqc_bar_chart ─────────────────────────────────────────────────────────────
 
 def mqc_bar_chart(
@@ -179,6 +446,7 @@ def mqc_bar_chart(
 
     Renders with Counts/Percentages toggle buttons if data_pct is present.
     """
+    plot_key = _resolve_plot_key(plot_key, mqc_data)
     if plot_key not in mqc_data:
         return _missing(f"{title}: data not found in MultiQC report "
                         f"(key: <code>{plot_key}</code>)")
@@ -304,6 +572,7 @@ def mqc_line_chart(
     If multiple datasets exist (e.g. Counts vs Obs/Exp), renders dataset
     selector buttons.
     """
+    plot_key = _resolve_plot_key(plot_key, mqc_data)
     if plot_key not in mqc_data:
         return _missing(f"{title}: data not found (key: <code>{plot_key}</code>)")
 
@@ -398,6 +667,7 @@ def mqc_heatmap(
 
     exclude_modules: list of module names (case-insensitive) to drop from x axis.
     """
+    plot_key = _resolve_plot_key(plot_key, mqc_data)
     if plot_key not in mqc_data:
         return _missing(f"{title}: data not found (key: <code>{plot_key}</code>)")
 
@@ -477,6 +747,7 @@ def mqc_mbias_chart(
 
     The pct_axis_update field specifies Y-axis tick suffix (%).
     """
+    plot_key = _resolve_plot_key(plot_key, mqc_data)
     if plot_key not in mqc_data:
         return _missing(
             f"M-bias interactive data not found "
@@ -612,9 +883,9 @@ def mqc_general_stats_table(html_path: str) -> dict:
 # We show: per-sample % duplicate and % unique as a stacked horizontal bar.
 
 def markdup_dedup_chart(
-    markdup_dir: str,
+    markdup_dir: str | list[str],
     samples: list[str],
-    flagstat_dir: str = "",
+    flagstat_dir: str | list[str] = "",
     title: str = "Deduplication (sambamba markdup)",
     height: int = 420,
 ) -> str:
@@ -629,9 +900,9 @@ def markdup_dedup_chart(
     Duplication % = found_duplicates / total_reads * 100
     total_reads sourced from {name}.bam.flagstat (in flagstat_dir / markdup_dir).
 
-    markdup_dir:  path to 3_markdup/ (contains .markdup_metrics.txt files)
-    flagstat_dir: path to 2_alignment/ (contains .bam.flagstat files).
-                  Falls back to markdup_dir if not provided.
+    markdup_dir:  one or more 3_markdup/ directories containing metrics files.
+    flagstat_dir: one or more 2_alignment/ directories containing flagstat
+                  files. Falls back to markdup_dir if not provided.
     samples:      list of sample names (ordering of bars).
     """
     import glob, re as _re, os as _os
@@ -641,12 +912,20 @@ def markdup_dedup_chart(
     valid_names: list[str]   = []
     missing:     list[str]   = []
 
-    fstat_dir = flagstat_dir or markdup_dir
+    def _dirs(value):
+        if not value:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(path) for path in value if path]
+        return [str(value)]
+
+    markdup_dirs = _dirs(markdup_dir)
+    flagstat_dirs = _dirs(flagstat_dir) or markdup_dirs
 
     def _parse_flagstat_total(name):
         """Return total read count from {name}.bam.flagstat, or None."""
         # Also search markdup_dir as fallback (some pipelines put flagstat there)
-        search_dirs = list(dict.fromkeys([fstat_dir, markdup_dir]))
+        search_dirs = list(dict.fromkeys(flagstat_dirs + markdup_dirs))
         for d in search_dirs:
             for fname in [f"{name}.bam.flagstat",
                           f"{name}.markdup.bam.flagstat",
@@ -665,8 +944,13 @@ def markdup_dedup_chart(
         return None
 
     for name in samples:
-        mpath = _os.path.join(markdup_dir, f"{name}.markdup_metrics.txt")
-        if not _os.path.exists(mpath):
+        mpath = next(
+            (_os.path.join(directory, f"{name}.markdup_metrics.txt")
+             for directory in markdup_dirs
+             if _os.path.exists(_os.path.join(directory, f"{name}.markdup_metrics.txt"))),
+            None,
+        )
+        if not mpath:
             missing.append(name)
             continue
 
@@ -709,14 +993,17 @@ def markdup_dedup_chart(
         valid_names.append(name)
 
     if not valid_names:
-        files_found = glob.glob(_os.path.join(markdup_dir, "*.markdup_metrics.txt"))
+        files_found = [
+            path for directory in markdup_dirs
+            for path in glob.glob(_os.path.join(directory, "*.markdup_metrics.txt"))
+        ]
         hint = (
-            f"Found {len(files_found)} .markdup_metrics.txt file(s) in "
-            f"<code>{markdup_dir}</code> but could not extract duplicate count or total reads.<br>"
+            f"Found {len(files_found)} .markdup_metrics.txt file(s) but could not extract "
+            f"duplicate count or total reads.<br>"
             f"Expected: <em>found N duplicates</em> line in sambamba output, "
-            f"and <code>.bam.flagstat</code> in <code>{fstat_dir}</code>."
+            f"and a matching <code>.bam.flagstat</code> file."
             if files_found else
-            f"No .markdup_metrics.txt files found in <code>{markdup_dir}</code>. "
+            f"No .markdup_metrics.txt files found. "
             f"Ensure the P1 patch is applied (sambamba stderr → file) and "
             f"<code>cftk process -s 3</code> has been re-run."
         )
@@ -819,24 +1106,35 @@ def markdup_dedup_chart(
 # this is the primary rendering path.
 
 def mbias_tsv_chart(
-    mbias_tsv_dir: str,
+    mbias_tsv_dir: str | list[str],
     title: str = "M-bias (MethylDackel)",
     height: int = 450,
+    tsv_paths: list[str] | None = None,
 ) -> str:
     """
     Read per-position mbias TSV files saved by qc_parser.parse_mbias_txt()
     and render an interactive Plotly M-bias chart.
 
-    mbias_tsv_dir: path to the mbias_data/ directory
-                   (typically {qc_dir}/mbias_data/ or {meth_dir}/mbias_data/)
+    mbias_tsv_dir: one or more mbias_data/ directories.
+    tsv_paths: explicit per-sample TSV paths, used when processing artifacts
+               are discovered from BAM-backed source projects.
     """
     import glob as _glob, os as _os
     import pandas as _pd
 
-    tsv_files = sorted(_glob.glob(_os.path.join(mbias_tsv_dir, "*_mbias.tsv")))
+    if isinstance(mbias_tsv_dir, (list, tuple)):
+        mbias_dirs = [str(path) for path in mbias_tsv_dir if path]
+    else:
+        mbias_dirs = [str(mbias_tsv_dir)] if mbias_tsv_dir else []
+    tsv_files = [
+        path for directory in mbias_dirs
+        for path in sorted(_glob.glob(_os.path.join(directory, "*_mbias.tsv")))
+    ]
+    tsv_files.extend(path for path in (tsv_paths or []) if _os.path.isfile(path))
+    tsv_files = list(dict.fromkeys(tsv_files))
     if not tsv_files:
         return _missing(
-            f"No M-bias TSV files found in <code>{mbias_tsv_dir}</code>. "
+            "No M-bias TSV files found in the available processing results. "
             f"This directory is populated by <code>cftk qc -s 1</code> "
             f"(which calls <code>parse_mbias_txt()</code>). "
             f"If <code>_mbias.txt</code> only contains "

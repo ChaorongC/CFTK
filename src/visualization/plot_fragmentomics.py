@@ -389,26 +389,70 @@ def _delfi_ax_style(ax, df, chrom_order, chrom_positions):
     ax.grid(axis="y", alpha=0.3, linestyle="--", linewidth=0.5)
 
 
+def _align_delfi_ratios(tsv_paths, use_corrected=True):
+    """Inner-join sample ratios by genomic coordinates for cohort plotting."""
+
+    coordinate_columns = ["contig", "start", "stop"]
+    aligned = None
+    value_columns = []
+    for index, tsv in enumerate(tsv_paths):
+        df, ratio_col, _chrom_order, _chrom_pos, _chrom_centers = _load_delfi_ratio(
+            tsv, use_corrected
+        )
+        missing = [column for column in coordinate_columns if column not in df.columns]
+        if missing:
+            raise ValueError(
+                f"DELFI table {tsv} is missing coordinate column(s): {', '.join(missing)}"
+            )
+        if df.duplicated(coordinate_columns).any():
+            raise ValueError(f"DELFI table {tsv} contains duplicate genomic bins")
+        value_column = f"sample_{index}"
+        frame = df[coordinate_columns + [ratio_col]].copy()
+        frame["contig"] = frame["contig"].astype("object")
+        frame = frame.rename(columns={ratio_col: value_column})
+        aligned = frame if aligned is None else aligned.merge(
+            frame,
+            on=coordinate_columns,
+            how="inner",
+            sort=False,
+            validate="one_to_one",
+        )
+        value_columns.append(value_column)
+
+    if aligned is None or aligned.empty:
+        raise ValueError("DELFI samples have no shared genomic bins with valid ratios")
+
+    chrom_order = [f"chr{i}" for i in range(1, 23)]
+    aligned["contig"] = pd.Categorical(
+        aligned["contig"], categories=chrom_order, ordered=True
+    )
+    aligned = aligned.sort_values(["contig", "start", "stop"]).reset_index(drop=True)
+    current_pos = 0
+    chrom_positions = {}
+    gpos_list = []
+    for chrom in chrom_order:
+        sub = aligned[aligned["contig"] == chrom]
+        if sub.empty:
+            continue
+        chrom_positions[chrom] = current_pos
+        gpos_list.append(pd.Series(current_pos + np.arange(len(sub)), index=sub.index))
+        current_pos += len(sub)
+    aligned["_gpos"] = pd.concat(gpos_list).reindex(aligned.index)
+    return aligned, value_columns, chrom_order, chrom_positions
+
+
 def plot_delfi_group(tsv_paths, png_path, pdf_path, label="Group",
                      use_corrected=True, figsize=(20, 4), color="#1f77b4"):
     """Mean DELFI score across samples in one group."""
-    all_ratios = []
-    ref_df = ref_col = ref_chrom_order = ref_chrom_pos = None
-    for tsv in tsv_paths:
-        df, ratio_col, chrom_order, chrom_pos, _ = _load_delfi_ratio(tsv, use_corrected)
-        all_ratios.append(df[ratio_col].values)
-        if ref_df is None:
-            ref_df, ref_col = df, ratio_col
-            ref_chrom_order, ref_chrom_pos = chrom_order, chrom_pos
-
-    mean_ratio = np.nanmean(np.vstack(all_ratios), axis=0)
-    ref_df = ref_df.copy()
-    ref_df[ref_col] = mean_ratio
+    ref_df, value_columns, chrom_order, chrom_positions = _align_delfi_ratios(
+        tsv_paths, use_corrected
+    )
+    mean_ratio = ref_df[value_columns].mean(axis=1).to_numpy()
 
     fig, ax = plt.subplots(figsize=figsize)
     ax.plot(ref_df["_gpos"], mean_ratio, color=color, linewidth=0.8, alpha=0.8,
             label=label)
-    _delfi_ax_style(ax, ref_df, ref_chrom_order, ref_chrom_pos)
+    _delfi_ax_style(ax, ref_df, chrom_order, chrom_positions)
     ax.set_title(f"DELFI Score — {label} (mean)")
     ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
@@ -420,21 +464,19 @@ def plot_delfi_comparison(grp_tsv_dict, png_path, pdf_path,
     """Two-group comparison: one mean line per group."""
     colors = ["#FF8C00", "#1f77b4", "#2ca02c", "#d62728"]
     fig, ax = plt.subplots(figsize=figsize)
-    ref_df = ref_chrom_order = ref_chrom_pos = None
-
+    paths = [path for tsv_paths in grp_tsv_dict.values() for path in tsv_paths]
+    ref_df, value_columns, chrom_order, chrom_positions = _align_delfi_ratios(
+        paths, use_corrected
+    )
+    offset = 0
     for i, (grp, tsv_paths) in enumerate(grp_tsv_dict.items()):
-        all_ratios = []
-        for tsv in tsv_paths:
-            df, ratio_col, chrom_order, chrom_pos, _ = _load_delfi_ratio(tsv, use_corrected)
-            all_ratios.append(df[ratio_col].values)
-            if ref_df is None:
-                ref_df = df.copy()
-                ref_chrom_order, ref_chrom_pos = chrom_order, chrom_pos
-        mean_ratio = np.nanmean(np.vstack(all_ratios), axis=0)
+        group_columns = value_columns[offset:offset + len(tsv_paths)]
+        offset += len(tsv_paths)
+        mean_ratio = ref_df[group_columns].mean(axis=1).to_numpy()
         ax.plot(ref_df["_gpos"], mean_ratio, color=colors[i % len(colors)],
                 linewidth=0.8, alpha=0.8, label=grp)
 
-    _delfi_ax_style(ax, ref_df, ref_chrom_order, ref_chrom_pos)
+    _delfi_ax_style(ax, ref_df, chrom_order, chrom_positions)
     ax.set_title("DELFI Score — Group Comparison")
     ax.legend(frameon=False, fontsize=8, loc="upper right")
     fig.tight_layout()

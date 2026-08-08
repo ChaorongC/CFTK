@@ -73,6 +73,10 @@ def _cmd_run(args):
 
 
 def _cmd_plan(args):
+    if getattr(args, "execution", "local") == "per-sample":
+        return _write_job_plan(args)
+    if getattr(args, "slurm", False):
+        raise SystemExit("[plan] ERROR: --slurm requires --execution per-sample")
     from analysis_workflow import plan
     return plan(args)
 
@@ -85,6 +89,31 @@ def _cmd_analyze(args):
     if getattr(args, "json", False):
         print(json.dumps(manifest, indent=2, sort_keys=True))
     return manifest
+
+
+def _write_job_plan(args):
+    from job_plan import write_fragmentomics_job_plan
+
+    plan = write_fragmentomics_job_plan(args)
+    if getattr(args, "json", False):
+        import json
+        print(json.dumps(plan, indent=2, sort_keys=True))
+    else:
+        print(f"CFTK per-sample job plan: {plan['plan_path']}")
+        print(f"Tasks: {plan['task_count']} sample task(s), {plan['finalizer_count']} finalizer(s)")
+        if plan.get("slurm_submit_script"):
+            print(f"Optional Slurm submission script: {plan['slurm_submit_script']}")
+        else:
+            print("Task scripts are scheduler-neutral; submit them with your site scheduler.")
+    return plan
+
+
+def _cmd_job_plan(args):
+    print(
+        "[job-plan] compatibility alias; use 'cftk plan --execution per-sample' for new workflows.",
+        file=sys.stderr,
+    )
+    return _write_job_plan(args)
 
 
 def _cmd_process(args):
@@ -262,21 +291,36 @@ def _cmd_frag(args):
         ensure_scheduler_capacity,
         plan_parallelism,
     )
-    from analysis.delfi import run_delfi
-    from analysis.end_motif import run_end_motif
-    from analysis.cleavage import run_cleavage
-    from analysis.wps import run_wps
-    from analysis.occupancy import run_occupancy
     from analysis.assay_scope import ScopeError, prepare_scope, write_scope_metadata
     from visualization.visualization import plot_fragmentomics
+
+    if getattr(args, "finalize", False) and getattr(args, "no_finalize", False):
+        raise SystemExit("[frag] ERROR: --finalize and --no-finalize cannot be used together")
+    if getattr(args, "finalize", False) and getattr(args, "samples", None):
+        raise SystemExit("[frag] ERROR: --finalize requires the complete cohort; omit --sample")
 
     cfg, paths = _load(args)
     ref        = cfg["reference_data"]
     frag_cfg   = _p(cfg, "analysis", "frag", default={})
 
     all_samples = get_all_samples(cfg)
+    requested_samples = list(getattr(args, "samples", None) or [])
+    known_samples = {sample["name"] for sample in all_samples}
+    unknown_samples = [name for name in requested_samples if name not in known_samples]
+    if unknown_samples:
+        raise SystemExit(
+            "[frag] ERROR: unknown --sample value(s): "
+            f"{', '.join(unknown_samples)}. Available: {', '.join(sorted(known_samples))}"
+        )
+    selected_samples = [
+        sample for sample in all_samples
+        if not requested_samples or sample["name"] in set(requested_samples)
+    ]
+    if not selected_samples:
+        raise SystemExit("[frag] ERROR: no samples selected")
     original_infile = [get_bam(s, paths) for s in all_samples]
-    args.infile = list(original_infile)
+    selected_infile = [get_bam(s, paths) for s in selected_samples]
+    args.infile = list(selected_infile)
     total_cores = _p(
         cfg, "process", "step3_markdup", "params", "cores", default=20
     )
@@ -284,9 +328,21 @@ def _cmd_frag(args):
         cfg, "process", "parallel_samples", default=1
     )
     try:
-        ensure_scheduler_capacity(total_cores, detect_scheduler_allocation())
+        allocation = detect_scheduler_allocation()
+        if getattr(args, "finalize", False):
+            # Finalization validates/plots existing files and performs no
+            # sample computation, so it needs no cohort CPU budget.
+            total_cores = 1
+            requested_parallel = 1
+        # A per-sample scheduler task owns only its requested CPU allocation;
+        # do not apply the cohort-wide budget to that isolated task.
+        if requested_samples and len(selected_samples) == 1:
+            allocated = allocation.get("allocated_cores")
+            if allocated is not None:
+                total_cores = min(total_cores, allocated)
+        ensure_scheduler_capacity(total_cores, allocation)
         resource_plan = plan_parallelism(
-            total_cores, requested_parallel, len(all_samples)
+            total_cores, requested_parallel, len(selected_samples)
         )
     except ValueError as exc:
         raise SystemExit(f"[frag] ERROR: invalid CPU resource plan: {exc}") from exc
@@ -367,9 +423,10 @@ def _cmd_frag(args):
             requested=requested_scope,
             cores=args.cores,
             kinds=selected_kinds,
+            materialize_samples=[sample["name"] for sample in selected_samples],
         ) if selected_kinds else {
             "info": {"requested": requested_scope, "mode": "not_applied"},
-            "bam_paths": original_infile,
+            "bam_paths": selected_infile,
             "region_bed": args.region,
             "bins": args.bins,
         }
@@ -384,6 +441,46 @@ def _cmd_frag(args):
             file=sys.stderr,
         )
 
+    def _finalize_stage(kind):
+        expected = {
+            "occupancy": (
+                paths["occ_out"], ".occupancy.tsv", "occupancy",
+            ),
+            "wps": (
+                paths["wps_out"], ".wps.tsv", "wps",
+            ),
+            "delfi": (
+                paths["delfi_out"], "_delfi.tsv", "delfi",
+            ),
+            "end_motif": (
+                paths["end_motif_out"], f"_{args.kmer}mer.tsv", "end-motif",
+            ),
+            "cleavage": (
+                paths["cleavage_out"], "_cleavage.bw", "cleavage",
+            ),
+        }[kind]
+        out_dir, suffix, label = expected
+        files = [
+            os.path.join(out_dir, f"{sample['name']}{suffix}")
+            for sample in all_samples
+        ]
+        missing = [path for path in files if not os.path.isfile(path) or os.path.getsize(path) == 0]
+        if missing:
+            raise SystemExit(
+                f"[frag] ERROR: cannot finalize {label}; {len(missing)} per-sample output(s) are missing, "
+                f"including {missing[0]}"
+            )
+        if kind == "occupancy" and len(files) > 1:
+            from analysis.occupancy import _merge_occupancy
+            _merge_occupancy(
+                list(zip(files, [sample["name"] for sample in all_samples])), out_dir
+            )
+        elif kind == "wps" and len(files) > 1:
+            from analysis.wps import _merge_wps
+            _merge_wps(
+                list(zip(files, [sample["name"] for sample in all_samples])), out_dir
+            )
+
     def _run_stage(kind, function, output_dir, plot_mode):
         saved = (args.infile, args.region, args.bins)
         if kind in selected_kinds and scope["info"].get("mode") == "panel":
@@ -394,22 +491,32 @@ def _cmd_frag(args):
                 args.bins = scope["bins"]
         try:
             os.makedirs(output_dir, exist_ok=True)
-            if kind in selected_kinds:
+            if kind in selected_kinds and not getattr(args, "no_finalize", False):
                 write_scope_metadata(paths, kind, scope["info"])
-            function(args)
-            plot_fragmentomics(args, mode=plot_mode)
+            if getattr(args, "finalize", False):
+                _finalize_stage(kind)
+                plot_fragmentomics(args, mode=plot_mode)
+            else:
+                function(args)
+                if not getattr(args, "no_finalize", False):
+                    plot_fragmentomics(args, mode=plot_mode)
         finally:
             args.infile, args.region, args.bins = saved
 
     if run_all or getattr(args, "occupancy", False):
+        from analysis.occupancy import run_occupancy
         _run_stage("occupancy", run_occupancy, paths["occ_out"], "occupancy")
     if run_all or getattr(args, "wps", False):
+        from analysis.wps import run_wps
         _run_stage("wps", run_wps, paths["wps_out"], "wps")
     if run_all or getattr(args, "delfi", False):
+        from analysis.delfi import run_delfi
         _run_stage("delfi", run_delfi, paths["delfi_out"], "delfi")
     if run_all or getattr(args, "end_motif", False):
+        from analysis.end_motif import run_end_motif
         _run_stage("end_motif", run_end_motif, paths["end_motif_out"], "end_motif")
     if run_all or getattr(args, "cleavage", False):
+        from analysis.cleavage import run_cleavage
         _run_stage("cleavage", run_cleavage, paths["cleavage_out"], "cleavage")
 
 
@@ -896,8 +1003,16 @@ def build_parser():
     p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
     p.add_argument("--parallel", type=int, default=None, metavar="N")
     p.add_argument(
+        "--execution", choices=("local", "per-sample"), default="local",
+        help="Execution plan: local is read-only; per-sample writes task and finalizer scripts.",
+    )
+    p.add_argument(
         "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
         help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
+    )
+    p.add_argument(
+        "--slurm", action="store_true",
+        help="With --execution per-sample, also write an optional Slurm-array helper without submitting it.",
     )
     p.add_argument("--json", action="store_true", help="Write only the machine-readable plan to stdout.")
     p.set_defaults(func=_cmd_plan)
@@ -922,6 +1037,26 @@ def build_parser():
     p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
     p.add_argument("--json", action="store_true", help="Write the final manifest as JSON after completion.")
     p.set_defaults(func=_cmd_analyze)
+
+    p = sub.add_parser(
+        "job-plan",
+        help="Compatibility alias for 'plan --execution per-sample'.",
+    )
+    p.add_argument(
+        "--stage", dest="stages", nargs="+", required=True,
+        choices=("occupancy", "wps", "delfi", "end_motif", "cleavage"),
+        metavar="STAGE",
+    )
+    p.add_argument(
+        "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
+        help="Scope WPS, occupancy, and DELFI as for cftk frag.",
+    )
+    p.add_argument(
+        "--slurm", action="store_true",
+        help="Also render an optional Slurm-array submission helper; it is never submitted automatically.",
+    )
+    p.add_argument("--json", action="store_true", help="Write the job plan JSON to stdout.")
+    p.set_defaults(func=_cmd_job_plan, execution="per-sample")
 
     # process
     p = sub.add_parser("process",
@@ -984,6 +1119,22 @@ def build_parser():
     p.add_argument("--delfi",     action="store_true")
     p.add_argument("--end-motif", dest="end_motif", action="store_true")
     p.add_argument("--cleavage",  action="store_true")
+    p.add_argument(
+        "--sample", dest="samples", action="append", default=None, metavar="NAME",
+        help="Run only one named sample; repeat only for portable local batches.",
+    )
+    p.add_argument(
+        "--parallel", type=int, default=None, metavar="N",
+        help="Run up to N selected samples concurrently (per-sample plans use 1).",
+    )
+    p.add_argument(
+        "--no-finalize", action="store_true",
+        help="Write only selected per-sample artifacts; do not merge or plot cohort outputs.",
+    )
+    p.add_argument(
+        "--finalize", action="store_true",
+        help="Validate selected per-sample artifacts, then create cohort matrices and figures without recomputing them.",
+    )
     p.add_argument(
         "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
         help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",

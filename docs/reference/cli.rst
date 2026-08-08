@@ -99,6 +99,7 @@ Commands
       cftk plan
       cftk plan --preset all
       cftk plan --stage diff report --json
+      cftk plan --stage delfi --execution per-sample --slurm
 
    ``auto`` plans occupancy, WPS, and reporting for one group; it additionally
    plans differential analysis for an explicit two-group control/case project.
@@ -108,6 +109,16 @@ Commands
    default. If configured
    differential or MESA modalities require occupancy or WPS matrices, their
    producer stages are added ahead of the dependent stage.
+
+   ``--execution local`` is the default read-only plan. For expensive
+   fragmentomics stages, ``--execution per-sample`` writes one independent
+   sample task plus a dependent cohort finalizer. CFTK never submits jobs or
+   requires a scheduler. Every sample task runs the established ``cftk frag``
+   implementation with ``--parallel 1 --no-finalize``. The finalizer verifies
+   all per-sample tables, creates cohort matrices/figures where applicable,
+   and records the complete stage through ``cftk analyze --adopt-existing``.
+   ``--slurm`` additionally writes an optional Slurm-array helper and
+   success-gated finalizer helper under ``results/provenance/job-plans/``.
 
 ``analyze``
    Run downstream stages with fail-fast preflight, artifact contracts,
@@ -125,9 +136,16 @@ Commands
    ``fragmentomics``, ``mesa``, ``comparative``, ``all``, and ``report``.
    Use ``--stage`` for a precise stage or alias such as ``diff``, ``wps``, or
    ``report``. ``--fragmentomics-scope`` controls targeted WPS, occupancy, and
-   DELFI inputs; it defaults to panel scope for Twist. ``--adopt-existing`` validates complete outputs produced before
-   an analysis manifest; untrusted partial outputs are quarantined before a
-   retry. See :doc:`../user_guide/downstream_workflow`.
+   DELFI inputs; it defaults to panel scope for Twist. Complete stages recorded
+   by a compatible prior analysis manifest are validated and reused
+   automatically, even when the current preset selects additional stages.
+   ``--adopt-existing`` remains available for complete outputs produced before
+   any trusted analysis manifest; untrusted partial outputs are quarantined
+   before a retry. See :doc:`../user_guide/downstream_workflow`.
+
+``job-plan``
+   Compatibility alias for ``cftk plan --execution per-sample``. New scripts
+   should use ``plan`` so all workflow planning starts from one command.
 
 ``process``
    Run raw processing steps 1 through 4. Step 3 uses the schema-v2 profile's
@@ -189,6 +207,12 @@ Commands
 
       cftk --config cftk_init.json frag --wps
       cftk --config cftk_init.json frag --delfi --fragmentomics-scope panel
+
+   ``--sample NAME --no-finalize`` is the internal/public per-sample task
+   boundary used by ``plan --execution per-sample``. Use ``--finalize`` only after every sample
+   task for that stage is successful; it validates the expected per-sample
+   outputs and creates cohort matrices and figures without recalculating the
+   sample measurements.
 
 ``mesa``
    Run MESA modality performance, model construction, and LOOCV. It requires
