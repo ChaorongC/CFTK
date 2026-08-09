@@ -122,6 +122,29 @@ per sample and a success-gated finalizer job. This does not change FinaleToolkit
 parameters or CFTK output schemas; it only moves independent sample work into
 separate scheduler jobs.
 
+Core Processing And QC Jobs
+---------------------------
+
+The same scheduler-neutral plan is available for the long-running core
+processing steps. It writes one task script per sample, then a finalizer that
+validates the complete stage before allowing the next stage to start:
+
+.. code-block:: bash
+
+   cftk plan --workflow core --execution per-sample --slurm
+
+Use ``--workflow process --stage 3`` or ``--workflow qc --stage 2`` to plan a
+single family/stage. The generated sample commands include ``--parallel 1`` and
+``--no-finalize``; the finalizer performs MultiQC, CpG-matrix merging, or
+cohort plotting only after every sample task succeeds. Process step 3 also
+checks the covered-target Picard metrics requested by the default Twist assay.
+
+Only QC step 2 (fragment length) is split across samples. QC steps 0, 1, and 3
+produce cohort-level summaries or reference-dependent tables, so they should be
+run once after the sample-level plan completes. A BAM-only project automatically
+skips process steps 1 and 2 in a core plan. The Slurm helper is an artifact for
+the user to submit under their own lab account; CFTK does not submit jobs.
+
 Resume And Method Boundaries
 ----------------------------
 

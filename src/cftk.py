@@ -73,7 +73,15 @@ def _cmd_run(args):
 
 
 def _cmd_plan(args):
-    if getattr(args, "execution", "local") == "per-sample":
+    execution = getattr(args, "execution", "local")
+    workflow = getattr(args, "workflow", None)
+    if workflow and execution != "per-sample":
+        raise SystemExit(
+            "[plan] ERROR: --workflow is only valid with "
+            "--execution per-sample; use the default downstream plan without "
+            "--workflow."
+        )
+    if execution == "per-sample":
         return _write_job_plan(args)
     if getattr(args, "slurm", False):
         raise SystemExit("[plan] ERROR: --slurm requires --execution per-sample")
@@ -92,9 +100,9 @@ def _cmd_analyze(args):
 
 
 def _write_job_plan(args):
-    from job_plan import write_fragmentomics_job_plan
+    from job_plan import write_job_plan
 
-    plan = write_fragmentomics_job_plan(args)
+    plan = write_job_plan(args)
     if getattr(args, "json", False):
         import json
         print(json.dumps(plan, indent=2, sort_keys=True))
@@ -135,11 +143,36 @@ def _cmd_qc(args):
     qc_p = _p(cfg, "analysis", "qc", "params", default={})
 
     all_samples = get_all_samples(cfg)
+    requested_samples = list(getattr(args, "samples", None) or [])
+    known_samples = {sample["name"] for sample in all_samples}
+    unknown_samples = [name for name in requested_samples if name not in known_samples]
+    if unknown_samples:
+        raise SystemExit(
+            "[qc] ERROR: unknown --sample value(s): "
+            + ", ".join(unknown_samples)
+        )
+    if requested_samples and any(step != 2 for step in (args.step if isinstance(args.step, list) else [args.step])):
+        raise SystemExit(
+            "[qc] ERROR: --sample is supported only for sample-level QC step 2 "
+            "(fragment length)."
+        )
+    if getattr(args, "finalize", False) and requested_samples:
+        raise SystemExit("[qc] ERROR: --finalize requires the complete cohort; omit --sample")
+    if getattr(args, "finalize", False) and getattr(args, "no_finalize", False):
+        raise SystemExit("[qc] ERROR: --finalize and --no-finalize cannot be combined")
+    selected_samples = [
+        sample for sample in all_samples
+        if not requested_samples or sample["name"] in set(requested_samples)
+    ]
+    if not selected_samples:
+        raise SystemExit("[qc] ERROR: no samples selected")
+    if getattr(args, "finalize", False):
+        selected_samples = all_samples
 
     # M2: pass all_samples and paths for step 0 (qc_parser)
-    args.all_samples  = all_samples
+    args.all_samples  = selected_samples
     args.paths        = paths
-    args.infile       = [get_bam(s, paths) for s in all_samples]
+    args.infile       = [get_bam(s, paths) for s in selected_samples]
     args.output_dir   = paths["qc"]
     args.matrices_dir = paths["cpg_matrix"]
     args.ref_fa       = _p(cfg, "reference_data", "genome_fa", default="")
@@ -153,12 +186,12 @@ def _cmd_qc(args):
     try:
         ensure_scheduler_capacity(total_cores, detect_scheduler_allocation())
         resource_plan = plan_parallelism(
-            total_cores, requested_parallel, len(all_samples)
+            total_cores, requested_parallel, len(selected_samples)
         )
     except ValueError as exc:
         raise SystemExit(f"[qc] ERROR: invalid CPU resource plan: {exc}") from exc
     args.total_cores = total_cores
-    args.parallel = resource_plan["concurrent_samples"]
+    args.parallel = 1 if getattr(args, "finalize", False) else resource_plan["concurrent_samples"]
     # QC labels describe available sample groups; unlike comparative analyses,
     # QC remains valid for a processing-only project with one declared group.
     args.group_labels = {
@@ -168,13 +201,43 @@ def _cmd_qc(args):
     os.makedirs(paths["qc"], exist_ok=True)
 
     steps = args.step if isinstance(args.step, list) else [args.step]
+    if getattr(args, "finalize", False):
+        for step in steps:
+            args.step = step
+            args.cores = total_cores
+            if step == 2:
+                missing = []
+                for bam in args.infile:
+                    stem = os.path.splitext(os.path.basename(bam))[0]
+                    fragment_dir = os.path.join(paths["qc"], "2_fragment_length")
+                    raw_csv = os.path.join(
+                        fragment_dir, f"fragment_length.{stem}.raw.csv"
+                    )
+                    hist_png = os.path.join(fragment_dir, f"fragment_length.{stem}.hist.png")
+                    for path in (raw_csv, hist_png):
+                        if not os.path.exists(path):
+                            missing.append(path)
+                if missing:
+                    raise SystemExit(
+                        f"[qc finalize] step 2 is missing {len(missing)} fragment-length "
+                        "table/figure output(s)"
+                    )
+                plot_qc(args)
+            else:
+                args.step = step
+                args.cores = total_cores
+                run_qc(args)
+                if step > 0:
+                    plot_qc(args)
+        return
+
     for step in steps:
         args.step = step
         args.cores = (
             resource_plan["threads_per_sample"] if step == 2 else total_cores
         )
         run_qc(args)
-        if step > 0:   # step 0 has no visualization
+        if step > 0 and not getattr(args, "no_finalize", False):   # step 0 has no visualization
             plot_qc(args)
 
 
@@ -1001,6 +1064,10 @@ def build_parser():
         default="auto",
     )
     p.add_argument("--stage", dest="stages", nargs="+", default=None, metavar="STAGE")
+    p.add_argument(
+        "--workflow", choices=("fragmentomics", "core", "process", "qc"), default=None,
+        help="Per-sample workflow family for --execution per-sample (default: infer from --stage).",
+    )
     p.add_argument("--parallel", type=int, default=None, metavar="N")
     p.add_argument(
         "--execution", choices=("local", "per-sample"), default="local",
@@ -1069,6 +1136,18 @@ def build_parser():
                    required=True, choices=range(1, 5), metavar="{1,2,3,4}")
     p.add_argument("--parallel", type=int, default=None, metavar="N")
     p.add_argument(
+        "--sample", dest="samples", action="append", default=None, metavar="NAME",
+        help="Run one named sample; per-sample task plans use this boundary.",
+    )
+    p.add_argument(
+        "--no-finalize", action="store_true",
+        help="Run only selected sample outputs; skip cohort aggregation.",
+    )
+    p.add_argument(
+        "--finalize", action="store_true",
+        help="Validate sample outputs and perform only cohort aggregation.",
+    )
+    p.add_argument(
         "--target-bed", default=None, metavar="PATH",
         help="Covered-target BED override for Picard metrics.",
     )
@@ -1090,6 +1169,18 @@ def build_parser():
                    help="One or more QC steps. e.g. -s 0 1 2 3")
     p.add_argument("--title",    default=None)
     p.add_argument("--parallel", type=int, default=None, metavar="N")
+    p.add_argument(
+        "--sample", dest="samples", action="append", default=None, metavar="NAME",
+        help="Run fragment-length QC for one named sample.",
+    )
+    p.add_argument(
+        "--no-finalize", action="store_true",
+        help="Run only selected sample outputs; skip cohort plotting.",
+    )
+    p.add_argument(
+        "--finalize", action="store_true",
+        help="Validate sample outputs and create cohort QC plots.",
+    )
     p.add_argument("--force",    action="store_true",
                    help="Re-run even if output files already exist")
     p.set_defaults(func=_cmd_qc)

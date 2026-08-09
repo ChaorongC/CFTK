@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_job_plan_writes_one_fragmentomics_task_per_sample_and_stage(
     monkeypatch, tmp_path
@@ -42,6 +44,92 @@ def test_job_plan_writes_one_fragmentomics_task_per_sample_and_stage(
     finalizer = Path(plan["finalizers"][0]["script"]).read_text()
     assert "frag --delfi --finalize" in finalizer
     assert "analyze --stage delfi --adopt-existing" in finalizer
+
+
+def _core_plan_args(config, workflow="core", stages=None, slurm=False):
+    return SimpleNamespace(
+        config=str(config), workflow=workflow, stages=stages, slurm=slurm,
+    )
+
+
+def test_core_job_plan_writes_sample_tasks_and_chained_finalizers(
+    monkeypatch, tmp_path
+):
+    monkeypatch.syspath_prepend("src")
+    import job_plan
+
+    config = tmp_path / "cftk_init.json"
+    config.write_text("{}\n")
+    samples = [
+        {"name": "control", "input_type": "fastq"},
+        {"name": "case", "input_type": "fastq"},
+    ]
+    monkeypatch.setattr(job_plan, "load_config", lambda _path: {"samples": {}})
+    monkeypatch.setattr(job_plan, "get_all_samples", lambda _cfg: samples)
+    monkeypatch.setattr(
+        job_plan, "get_work_paths",
+        lambda _cfg: {"provenance": str(tmp_path / "results/provenance")},
+    )
+
+    plan = job_plan.write_core_job_plan(
+        _core_plan_args(config, workflow="core", slurm=True)
+    )
+
+    assert plan["stages"] == ["process.1", "process.2", "process.3", "process.4", "qc.2"]
+    assert plan["task_count"] == 10
+    assert plan["finalizer_count"] == 5
+    process_task = next(item for item in plan["tasks"] if item["id"] == "process.2:case")
+    assert process_task["depends_on"] == ["process.1:finalize"]
+    assert "--sample case --no-finalize" in Path(process_task["script"]).read_text()
+    finalizer = next(item for item in plan["finalizers"] if item["stage"] == "process.4")
+    assert "process -s 4 --parallel 1 --finalize" in Path(finalizer["script"]).read_text()
+
+    submit = Path(plan["slurm_submit_script"]).read_text()
+    dependency_lines = [line for line in submit.splitlines() if line.startswith("dependency=")]
+    assert dependency_lines[0] == 'dependency=""'
+    assert dependency_lines[1] == 'dependency="--dependency=afterok:${previous_finalizer}"'
+    assert "--dependency=afterok:${job_id}" in submit
+
+
+def test_core_job_plan_skips_fastq_only_stages_for_bam_project(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend("src")
+    import job_plan
+
+    config = tmp_path / "cftk_init.json"
+    config.write_text("{}\n")
+    monkeypatch.setattr(job_plan, "load_config", lambda _path: {"samples": {}})
+    monkeypatch.setattr(
+        job_plan, "get_all_samples", lambda _cfg: [{"name": "bam1", "input_type": "bam"}]
+    )
+    monkeypatch.setattr(
+        job_plan, "get_work_paths",
+        lambda _cfg: {"provenance": str(tmp_path / "results/provenance")},
+    )
+
+    plan = job_plan.write_core_job_plan(_core_plan_args(config))
+
+    assert plan["skipped_stages"] == ["process.1", "process.2"]
+    assert [item["stage"] for item in plan["finalizers"]] == [
+        "process.3", "process.4", "qc.2"
+    ]
+    assert plan["tasks"][0]["depends_on"] == []
+
+
+def test_core_job_plan_rejects_cohort_only_qc_stages(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend("src")
+    import job_plan
+
+    config = tmp_path / "cftk_init.json"
+    config.write_text("{}\n")
+    monkeypatch.setattr(job_plan, "load_config", lambda _path: {"samples": {}})
+    monkeypatch.setattr(job_plan, "get_all_samples", lambda _cfg: [{"name": "s", "input_type": "bam"}])
+    monkeypatch.setattr(
+        job_plan, "get_work_paths",
+        lambda _cfg: {"provenance": str(tmp_path / "results/provenance")},
+    )
+
+    with pytest.raises(SystemExit, match="cohort-level"):
+        job_plan.write_core_job_plan(_core_plan_args(config, workflow="qc", stages=["0"]))
 
 
 def test_frag_parser_accepts_generated_parallel_option(monkeypatch):

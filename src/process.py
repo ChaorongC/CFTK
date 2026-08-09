@@ -891,6 +891,75 @@ def _run_multiqc(step, paths, samples=None):
         disp(f"[multiqc] step {step}: WARNING — multiqc_report.html not found")
 
 
+def _finalize_process_step(step, samples, paths, args):
+    """Validate sample-local process outputs and perform only cohort work."""
+
+    missing = []
+    if step == 1:
+        for sample in samples:
+            ext = "fq.gz" if sample.get("r1", "").endswith(".gz") else "fq"
+            for mate, old_mate in (("R1", "val_1"), ("R2", "val_2")):
+                trimmed = _find_trimmed(paths["trimming"], sample["name"], mate, old_mate, ext)
+                if not os.path.exists(trimmed):
+                    missing.append(trimmed)
+        if missing:
+            raise RuntimeError(
+                f"[process finalize] step 1 is missing {len(missing)} trimmed sample output(s)"
+            )
+        _run_multiqc(step, paths, samples=samples)
+        return
+    if step == 2:
+        for sample in samples:
+            bam = os.path.join(paths["alignment"], f"{sample['name']}.bam")
+            for path in (bam, f"{bam}.bai", f"{bam}.flagstat", f"{bam}.stats"):
+                if not os.path.exists(path):
+                    missing.append(path)
+        if missing:
+            raise RuntimeError(
+                f"[process finalize] step 2 is missing {len(missing)} alignment "
+                "BAM/index/metrics output(s)"
+            )
+        _run_multiqc(step, paths, samples=samples)
+        return
+    if step == 3:
+        for sample in samples:
+            bam = os.path.join(paths["markdup"], f"{sample['name']}.markdup.bam")
+            for path in (bam, f"{bam}.bai"):
+                if not os.path.exists(path):
+                    missing.append(path)
+            if not getattr(args, "skip_picard_metrics", False):
+                metrics_root = Path(paths["markdup"]) / "picard_metrics"
+                hs_candidates = list(metrics_root.rglob(f"{sample['name']}.hs_metrics.txt"))
+                complete_metrics = [
+                    hs for hs in hs_candidates
+                    if (hs.parent / f"{sample['name']}.per_target_coverage.txt").is_file()
+                    and (hs.parent / f"{sample['name']}.multiple_metrics.done").is_file()
+                ]
+                if not complete_metrics:
+                    missing.append(
+                        str(metrics_root / f"**/{sample['name']}.hs_metrics.txt")
+                    )
+        if missing:
+            raise RuntimeError(
+                f"[process finalize] step 3 is missing {len(missing)} duplicate-marked "
+                "BAM/index or Picard metric output(s)"
+            )
+        return
+    if step == 4:
+        bedgraphs = [
+            os.path.join(paths["methylation"], f"{sample['name']}_CpG.bedGraph")
+            for sample in samples
+        ]
+        missing = [path for path in bedgraphs if not os.path.exists(path)]
+        if missing:
+            raise RuntimeError(
+                f"[process finalize] step 4 is missing {len(missing)} CpG bedGraph(s)"
+            )
+        _merge_cpg(bedgraphs, samples, paths)
+        return
+    raise ValueError(f"unsupported process finalizer step: {step}")
+
+
 # ── Main entry ────────────────────────────────────────────────────────────────
 
 def process(args, config_path="./cftk_init.json"):
@@ -899,7 +968,25 @@ def process(args, config_path="./cftk_init.json"):
     provenance = paths.get("provenance")
     if provenance:
         configure_command_log(os.path.join(provenance, "commands.jsonl"))
-    samples = get_all_samples(cfg)
+    all_samples = get_all_samples(cfg)
+    requested_samples = list(getattr(args, "samples", None) or [])
+    known_samples = {sample["name"] for sample in all_samples}
+    unknown_samples = [name for name in requested_samples if name not in known_samples]
+    if unknown_samples:
+        raise SystemExit(
+            "[process] ERROR: unknown --sample value(s): "
+            + ", ".join(unknown_samples)
+        )
+    if getattr(args, "finalize", False) and requested_samples:
+        raise SystemExit("[process] ERROR: --finalize requires the complete cohort; omit --sample")
+    if getattr(args, "finalize", False) and getattr(args, "no_finalize", False):
+        raise SystemExit("[process] ERROR: --finalize and --no-finalize cannot be combined")
+    samples = [
+        sample for sample in all_samples
+        if not requested_samples or sample["name"] in set(requested_samples)
+    ]
+    if not samples and (requested_samples or getattr(args, "finalize", False)):
+        raise SystemExit("[process] ERROR: no samples selected")
     steps   = sorted(set(args.step))
     ref     = cfg["reference_data"]
     proc    = cfg["process"]
@@ -916,6 +1003,12 @@ def process(args, config_path="./cftk_init.json"):
     invalid = [s for s in steps if s not in STEPS]
     if invalid:
         sys.exit(f"[process] Invalid steps: {invalid}. Valid: {list(STEPS.keys())}")
+
+    if getattr(args, "finalize", False):
+        for step in steps:
+            _finalize_process_step(step, samples, paths, args)
+        disp("[process finalize] cohort outputs validated.")
+        return
 
     step_resources = {}
     scheduler = detect_scheduler_allocation()
@@ -981,9 +1074,10 @@ def process(args, config_path="./cftk_init.json"):
 
         disp(f"[step {step}] all samples complete.")
         # Pass samples to multiqc so replace_names.tsv can be generated for step 1
-        _run_multiqc(step, paths, samples=samples)
+        if not getattr(args, "no_finalize", False):
+            _run_multiqc(step, paths, samples=samples)
 
-    if 4 in steps:
+    if 4 in steps and not getattr(args, "no_finalize", False):
         successful = [bg for bg in bedgraph_results
                       if bg and os.path.exists(bg)]
         if successful:

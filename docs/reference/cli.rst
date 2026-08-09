@@ -120,6 +120,24 @@ Commands
    ``--slurm`` additionally writes an optional Slurm-array helper and
    success-gated finalizer helper under ``results/provenance/job-plans/``.
 
+   Core processing and fragment-length QC can use the same one-sample boundary
+   when a scheduler should own the sample jobs:
+
+   .. code-block:: bash
+
+      cftk plan --workflow core --execution per-sample --slurm
+      cftk plan --workflow process --stage 3 --execution per-sample --slurm
+      cftk plan --workflow qc --stage 2 --execution per-sample --slurm
+
+   ``core`` includes process steps 1-4 and QC step 2. BAM-only projects mark
+   FASTQ-only process steps 1-2 as skipped. QC steps 0, 1, and 3 remain
+   cohort-level because they assemble cohort tables or figures; run them once
+   after the generated sample tasks finish. The generated process step-3
+   finalizer also requires the covered-target ``CollectHsMetrics`` and
+   ``CollectMultipleMetrics`` outputs unless ``--skip-picard-metrics`` was
+   explicitly used for the sample tasks. CFTK never submits the helper; submit
+   it under the user's institutional account.
+
 ``analyze``
    Run downstream stages with fail-fast preflight, artifact contracts,
    provenance, evidence, and resume behavior. It requires a schema-v2 project
