@@ -88,12 +88,14 @@ locations:
   ``results/5_mesa/``;
 - report: ``results/report/report.html``.
 
-Optional Per-Sample Jobs
-------------------------
+Advanced: Per-Sample Jobs
+-------------------------
 
-The default execution model is local, bounded in-process parallelism through
-``--parallel``. For an expensive fragmentomics stage, generate a per-sample
-task plan instead:
+The normal execution model is local, bounded in-process parallelism through
+``cftk run --parallel N`` or the corresponding direct command. Use the
+per-sample task plan only when you intentionally want one scheduler job per
+sample or need to connect CFTK to an institutional workflow engine. For an
+expensive fragmentomics stage, generate a per-sample task plan instead:
 
 .. code-block:: bash
 
@@ -121,6 +123,11 @@ arguments from the chosen stage and local policy. It submits one array element
 per sample and a success-gated finalizer job. This does not change FinaleToolkit
 parameters or CFTK output schemas; it only moves independent sample work into
 separate scheduler jobs.
+
+While an advanced plan is in use, inspect its observed artifacts and whether a
+cohort finalizer is ready with ``cftk status``. This is deliberately separate
+from Slurm/PBS/SGE status: the scheduler remains the authority for queued,
+running, canceled, and failed jobs.
 
 Core Processing And QC Jobs
 ---------------------------

@@ -89,6 +89,21 @@ def _cmd_plan(args):
     return plan(args)
 
 
+def _cmd_status(args):
+    from job_plan import find_job_plan, render_job_plan_status, summarize_job_plan
+
+    plan_path = getattr(args, "plan", None) or find_job_plan(
+        args.config, getattr(args, "workflow", None)
+    )
+    status = summarize_job_plan(plan_path)
+    if getattr(args, "json", False):
+        import json
+        print(json.dumps(status, indent=2, sort_keys=True))
+    else:
+        print(render_job_plan_status(status))
+    return status
+
+
 def _cmd_analyze(args):
     import json
     from analysis_workflow import run
@@ -229,6 +244,12 @@ def _cmd_qc(args):
                 run_qc(args)
                 if step > 0:
                     plot_qc(args)
+            plan_id = getattr(args, "job_plan_id", None)
+            if plan_id:
+                from job_plan import write_finalizer_marker
+                write_finalizer_marker(
+                    paths, plan_id, f"qc.{step}", task_count=len(selected_samples)
+                )
         return
 
     for step in steps:
@@ -1085,6 +1106,18 @@ def build_parser():
     p.set_defaults(func=_cmd_plan)
 
     p = sub.add_parser(
+        "status",
+        help="Advanced: inspect observed artifacts and finalizer state for a per-sample job plan.",
+    )
+    p.add_argument("--plan", default=None, metavar="PATH", help="Inspect this job-plan.json instead of the newest plan.")
+    p.add_argument(
+        "--workflow", choices=("fragmentomics", "core", "process", "qc"),
+        default=None, help="Select the newest plan in this workflow family.",
+    )
+    p.add_argument("--json", action="store_true", help="Write machine-readable status JSON.")
+    p.set_defaults(func=_cmd_status)
+
+    p = sub.add_parser(
         "analyze",
         help="Run role-aware downstream analyses with preflight, checkpoints, provenance, and evidence.",
     )
@@ -1102,6 +1135,7 @@ def build_parser():
     )
     p.add_argument("--dry-run", action="store_true", help="Write the downstream plan and evidence without executing stages.")
     p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
+    p.add_argument("--job-plan-id", default=None, help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true", help="Write the final manifest as JSON after completion.")
     p.set_defaults(func=_cmd_analyze)
 
@@ -1147,6 +1181,7 @@ def build_parser():
         "--finalize", action="store_true",
         help="Validate sample outputs and perform only cohort aggregation.",
     )
+    p.add_argument("--job-plan-id", default=None, help=argparse.SUPPRESS)
     p.add_argument(
         "--target-bed", default=None, metavar="PATH",
         help="Covered-target BED override for Picard metrics.",
@@ -1181,6 +1216,7 @@ def build_parser():
         "--finalize", action="store_true",
         help="Validate sample outputs and create cohort QC plots.",
     )
+    p.add_argument("--job-plan-id", default=None, help=argparse.SUPPRESS)
     p.add_argument("--force",    action="store_true",
                    help="Re-run even if output files already exist")
     p.set_defaults(func=_cmd_qc)

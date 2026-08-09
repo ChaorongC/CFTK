@@ -110,13 +110,16 @@ Commands
    differential or MESA modalities require occupancy or WPS matrices, their
    producer stages are added ahead of the dependent stage.
 
-   ``--execution local`` is the default read-only plan. For expensive
-   fragmentomics stages, ``--execution per-sample`` writes one independent
+   ``--execution local`` is the default read-only plan and the recommended
+   beginner path. Normal execution uses ``cftk run --parallel N`` (or one
+   ordinary institutional batch job containing that command). For expensive
+   fragmentomics or core stages, the advanced ``--execution per-sample`` writes one independent
    sample task plus a dependent cohort finalizer. CFTK never submits jobs or
-   requires a scheduler. Every sample task runs the established ``cftk frag``
-   implementation with ``--parallel 1 --no-finalize``. The finalizer verifies
-   all per-sample tables, creates cohort matrices/figures where applicable,
-   and records the complete stage through ``cftk analyze --adopt-existing``.
+   requires a scheduler. Fragmentomics sample tasks run the established
+   ``cftk frag`` implementation with ``--parallel 1 --no-finalize``; core and
+   QC tasks use their corresponding ``cftk process``/``cftk qc`` boundaries.
+   The finalizer verifies all per-sample outputs, creates cohort
+   matrices/figures where applicable, and records successful completion.
    ``--slurm`` additionally writes an optional Slurm-array helper and
    success-gated finalizer helper under ``results/provenance/job-plans/``.
 
@@ -137,6 +140,18 @@ Commands
    ``CollectMultipleMetrics`` outputs unless ``--skip-picard-metrics`` was
    explicitly used for the sample tasks. CFTK never submits the helper; submit
    it under the user's institutional account.
+
+``status``
+   Advanced, read-only inspection of a generated per-sample job plan. It
+   reports observed sample artifacts and whether each finalizer is pending,
+   ready, complete, or stale (a recorded finalizer whose artifacts no longer
+   satisfy the plan). It does not infer scheduler queue or failure state.
+
+   .. code-block:: bash
+
+      cftk status
+      cftk status --workflow core --json
+      cftk status --plan results/provenance/job-plans/core-*/job-plan.json
 
 ``analyze``
    Run downstream stages with fail-fast preflight, artifact contracts,

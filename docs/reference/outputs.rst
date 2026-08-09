@@ -33,6 +33,14 @@ CFTK writes results below ``<output_dir>/results``.
      - Immutable downstream-analysis attempt containing the selected preset,
        doctor preflight, artifact/figure contracts, command mirror, resource
        plan, evidence bundle, and HTML summary.
+   * - ``provenance/job-plans/<plan-id>/``
+     - Advanced per-sample task scripts, finalizer scripts, and ``job-plan.json``
+       written by ``cftk plan --execution per-sample``. They are never
+       submitted automatically.
+   * - ``provenance/job-finalizers/<plan-id>/``
+     - Completion markers written only after the generated cohort finalizer
+       succeeds. ``cftk status`` checks these markers together with current
+       sample artifacts; it does not replace scheduler status commands.
    * - ``provenance/quarantine/<run-id>/``
      - Preserved partial or damaged stage artifacts moved before a safe retry.
    * - ``1_process/1_trimming/``

@@ -44,6 +44,10 @@ def test_job_plan_writes_one_fragmentomics_task_per_sample_and_stage(
     finalizer = Path(plan["finalizers"][0]["script"]).read_text()
     assert "frag --delfi --finalize" in finalizer
     assert "analyze --stage delfi --adopt-existing" in finalizer
+    assert plan["plan_id"] in finalizer
+    assert plan["finalizers"][0]["marker"].endswith(
+        f"job-finalizers/{plan['plan_id']}/fragmentomics.delfi.json"
+    )
 
 
 def _core_plan_args(config, workflow="core", stages=None, slurm=False):
@@ -130,6 +134,72 @@ def test_core_job_plan_rejects_cohort_only_qc_stages(monkeypatch, tmp_path):
 
     with pytest.raises(SystemExit, match="cohort-level"):
         job_plan.write_core_job_plan(_core_plan_args(config, workflow="qc", stages=["0"]))
+
+
+def test_job_plan_status_distinguishes_ready_from_completed_finalizer(
+    monkeypatch, tmp_path
+):
+    monkeypatch.syspath_prepend("src")
+    import job_plan
+
+    config = tmp_path / "cftk_init.json"
+    config.write_text("{}\n")
+    sample = {"name": "bam1", "input_type": "bam", "bam": "input.bam"}
+    paths = {
+        "provenance": str(tmp_path / "results/provenance"),
+        "alignment": str(tmp_path / "alignment"),
+        "markdup": str(tmp_path / "markdup"),
+        "methylation": str(tmp_path / "methylation"),
+        "trimming": str(tmp_path / "trimming"),
+        "qc": str(tmp_path / "qc"),
+        "occ_out": str(tmp_path / "occupancy"),
+        "wps_out": str(tmp_path / "wps"),
+        "delfi_out": str(tmp_path / "delfi"),
+        "end_motif_out": str(tmp_path / "end_motif"),
+        "cleavage_out": str(tmp_path / "cleavage"),
+    }
+    cfg = {"samples": {"Control": [sample]}, "analysis": {"frag": {}}}
+    monkeypatch.setattr(job_plan, "load_config", lambda _path, **_kwargs: cfg)
+    monkeypatch.setattr(job_plan, "get_all_samples", lambda _cfg: [sample])
+    monkeypatch.setattr(job_plan, "get_work_paths", lambda _cfg: paths)
+    monkeypatch.setattr(job_plan, "get_bam", lambda _sample, _paths: "input.bam")
+
+    plan = job_plan.write_core_job_plan(_core_plan_args(config))
+    markdup = Path(paths["markdup"])
+    markdup.mkdir(parents=True)
+    (markdup / "bam1.markdup.bam").write_text("bam")
+    (markdup / "bam1.markdup.bam.bai").write_text("index")
+    metrics = markdup / "picard_metrics" / "profile"
+    metrics.mkdir(parents=True)
+    for filename in (
+        "bam1.hs_metrics.txt", "bam1.per_target_coverage.txt",
+        "bam1.multiple_metrics.done",
+    ):
+        (metrics / filename).write_text("ok")
+    Path(paths["methylation"]).mkdir(parents=True)
+    (Path(paths["methylation"]) / "bam1_CpG.bedGraph").write_text("chr1\t0\t1\t50\n")
+    qc_dir = Path(paths["qc"]) / "2_fragment_length"
+    qc_dir.mkdir(parents=True)
+    (qc_dir / "fragment_length.input.raw.csv").write_text("Size\tOccurrences\n100\t1\n")
+    (qc_dir / "fragment_length.input.hist.png").write_bytes(b"png")
+
+    status = job_plan.summarize_job_plan(plan["plan_path"])
+    assert status["status"] == "ready_to_finalize"
+    assert status["complete_task_count"] == status["task_count"] == 3
+    assert all(item["status"] == "ready" for item in status["finalizers"])
+
+    for finalizer in plan["finalizers"]:
+        job_plan.write_finalizer_marker(paths, plan["plan_id"], finalizer["stage"])
+    status = job_plan.summarize_job_plan(plan["plan_path"])
+    assert status["status"] == "complete"
+    assert all(item["status"] == "complete" for item in status["finalizers"])
+
+    (Path(paths["methylation"]) / "bam1_CpG.bedGraph").unlink()
+    status = job_plan.summarize_job_plan(plan["plan_path"])
+    assert status["status"] == "requires_attention"
+    assert next(
+        item for item in status["finalizers"] if item["stage"] == "process.4"
+    )["status"] == "stale"
 
 
 def test_frag_parser_accepts_generated_parallel_option(monkeypatch):

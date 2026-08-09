@@ -1007,6 +1007,12 @@ def process(args, config_path="./cftk_init.json"):
     if getattr(args, "finalize", False):
         for step in steps:
             _finalize_process_step(step, samples, paths, args)
+            plan_id = getattr(args, "job_plan_id", None)
+            if plan_id:
+                from job_plan import write_finalizer_marker
+                write_finalizer_marker(
+                    paths, plan_id, f"process.{step}", task_count=len(samples)
+                )
         disp("[process finalize] cohort outputs validated.")
         return
 

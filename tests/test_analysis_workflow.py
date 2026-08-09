@@ -362,6 +362,7 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     qc_args = parser.parse_args([
         "qc", "-s", "2", "--sample", "sample_a", "--finalize",
     ])
+    status_args = parser.parse_args(["status", "--workflow", "core", "--json"])
     analyze_args = parser.parse_args(["analyze", "--stage", "diff", "report"])
     doctor_args = parser.parse_args(["doctor", "--analysis-preset", "descriptive"])
     frag_args = parser.parse_args(["frag", "--wps", "--fragmentomics-scope", "panel"])
@@ -375,6 +376,8 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert process_args.no_finalize is True
     assert qc_args.samples == ["sample_a"]
     assert qc_args.finalize is True
+    assert status_args.workflow == "core"
+    assert status_args.json is True
     assert analyze_args.stages == ["diff", "report"]
     assert doctor_args.analysis_preset == "descriptive"
     assert frag_args.fragmentomics_scope == "panel"

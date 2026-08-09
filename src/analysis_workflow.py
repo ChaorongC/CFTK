@@ -1361,5 +1361,13 @@ def run(args):
     _core._append_event(events_path, "run_completed", run_id=run_id)
     if not _finalize_evidence(manifest, run_dir, provenance, events_path):
         raise SystemExit(2)
+    plan_id = getattr(args, "job_plan_id", None)
+    if plan_id:
+        from job_plan import write_finalizer_marker
+        for stage_id in stages:
+            write_finalizer_marker(
+                context["paths"], plan_id, stage_id,
+                task_count=len(context["samples"]),
+            )
     disp(f"[analyze] complete: {run_dir / 'run-summary.html'}")
     return manifest
