@@ -69,6 +69,14 @@ Commands
       cftk run
       cftk run --dry-run
       cftk run --parallel 2 --qc-dinucleotide
+      cftk run --downstream auto
+
+   By default, ``run`` stops after core processing and QC. ``--downstream``
+   explicitly continues into a role-aware downstream preset, reusing valid
+   artifacts and linking the downstream manifest and HTML summary from the
+   core run summary. ``--downstream all`` is an advanced option; per-sample
+   job plans and Slurm helpers remain separate advanced commands and are never
+   submitted automatically.
 
    ``--adopt-existing`` is required to validate complete outputs that predate a
    run manifest. Partial untrusted outputs are preserved in a timestamped
@@ -78,6 +86,9 @@ Commands
    ``--parallel N`` sets concurrent samples. CFTK divides the configured total
    ``process.cores`` budget across those sample commands and records the result
    in ``resource-plan.json``.
+   ``--fragmentomics-scope`` is an advanced downstream-only override and must
+   be used together with ``--downstream``; it applies the same panel/genome
+   scope contract as ``cftk analyze``.
 
    Every attempt writes ``run.json``, event and command JSONL files, doctor and
    tool-version JSON, output/figure TSVs, and ``run-summary.html`` under

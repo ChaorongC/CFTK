@@ -1,10 +1,24 @@
 Downstream Workflow
 ===================
 
-``cftk run`` finishes core processing and QC. Use ``cftk plan`` before any
-downstream analysis so CFTK can inspect required matrices, BAMs, reference
-components, optional Python packages, external executables, CPU allocation,
-and the exact output contract without processing data.
+``cftk run`` finishes core processing and QC. For the ordinary beginner
+workflow, request downstream analysis explicitly after that run:
+
+.. code-block:: bash
+
+   cftk run --downstream auto
+
+This reuses valid core and downstream artifacts automatically, generates the
+downstream evidence, and links the downstream manifest and summary from the
+core run summary. The ``auto`` preset also includes the self-contained HTML
+report. Other presets run only their selected stages unless ``report`` is
+included explicitly. The core and downstream manifests remain separate and
+immutable so each stage retains its own provenance and resume contract.
+
+Use ``cftk plan`` before a large or expert downstream analysis when you want
+to inspect required matrices, BAMs, reference components, optional Python
+packages, external executables, CPU allocation, and the exact output contract
+without processing data.
 
 .. code-block:: bash
 

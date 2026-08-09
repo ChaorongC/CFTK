@@ -2,8 +2,11 @@
 """cftk — cfDNA multimodal epigenetic analysis toolkit."""
 
 import argparse
+import json
 import os
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 _OPTIONAL_IMPORT_EXTRAS = {
     "adjustText": "analysis",
@@ -69,7 +72,92 @@ def _cmd_doctor(args):
 
 def _cmd_run(args):
     from run_workflow import run
-    return run(args)
+
+    downstream = getattr(args, "downstream", None)
+    if getattr(args, "fragmentomics_scope", None) and not downstream:
+        raise SystemExit(
+            "[run] ERROR: --fragmentomics-scope requires --downstream; "
+            "use cftk analyze for a downstream-only scope override."
+        )
+    core_manifest = run(args)
+    if not downstream:
+        return core_manifest
+
+    # Keep the core and downstream contracts separate, but link their immutable
+    # manifests so the beginner has one summary to follow.
+    from analysis_workflow import run as run_analysis
+    from run_workflow import _append_event, _save_attempt
+
+    analysis_args = SimpleNamespace(
+        config=args.config,
+        preset=downstream,
+        stages=None,
+        parallel=args.parallel,
+        fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
+        dry_run=bool(args.dry_run),
+        adopt_existing=bool(args.adopt_existing),
+        json=False,
+    )
+    core_run_dir = Path(core_manifest["run_dir"]).resolve()
+    provenance = core_run_dir.parent.parent
+    analysis_manifest = None
+    try:
+        analysis_manifest = run_analysis(analysis_args)
+    except BaseException:
+        pointer = provenance / "latest-analysis.json"
+        if pointer.is_file():
+            try:
+                analysis_manifest = json.loads(
+                    Path(json.loads(pointer.read_text(encoding="utf-8"))["manifest"])
+                    .read_text(encoding="utf-8")
+                )
+            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                analysis_manifest = None
+        _link_downstream_manifest(
+            core_manifest, analysis_manifest, downstream, status="failed"
+        )
+        _append_event(
+            core_run_dir / "events.jsonl",
+            "downstream_failed",
+            preset=downstream,
+            analysis_run_id=(analysis_manifest or {}).get("run_id"),
+        )
+        _save_attempt(core_manifest, core_run_dir, provenance)
+        raise
+
+    _link_downstream_manifest(
+        core_manifest,
+        analysis_manifest,
+        downstream,
+        status=analysis_manifest.get("status", "unknown"),
+    )
+    _append_event(
+        core_run_dir / "events.jsonl",
+        "downstream_completed",
+        preset=downstream,
+        analysis_run_id=analysis_manifest.get("run_id"),
+        status=analysis_manifest.get("status"),
+    )
+    _save_attempt(core_manifest, core_run_dir, provenance)
+    return core_manifest
+
+
+def _link_downstream_manifest(core_manifest, analysis_manifest, preset, *, status):
+    """Attach a lightweight downstream pointer to a core run manifest."""
+
+    record = {
+        "preset": preset,
+        "status": status,
+        "run_id": (analysis_manifest or {}).get("run_id"),
+        "run_dir": (analysis_manifest or {}).get("run_dir"),
+        "manifest": str(
+            Path((analysis_manifest or {}).get("run_dir", "")) / "run.json"
+        ) if (analysis_manifest or {}).get("run_dir") else None,
+        "summary": str(
+            Path((analysis_manifest or {}).get("run_dir", "")) / "run-summary.html"
+        ) if (analysis_manifest or {}).get("run_dir") else None,
+    }
+    core_manifest["downstream"] = record
 
 
 def _cmd_plan(args):
@@ -1070,6 +1158,23 @@ def build_parser():
     p.add_argument(
         "--qc-dinucleotide", action="store_true",
         help="Also run the expensive dinucleotide-frequency QC stage.",
+    )
+    p.add_argument(
+        "--downstream",
+        choices=("auto", "descriptive", "differential", "dmr", "fragmentomics",
+                 "mesa", "comparative", "all", "report"),
+        default=None,
+        metavar="PRESET",
+        help=(
+            "After core processing/QC, run this downstream preset and link its "
+            "manifest into the core summary. Explicit opt-in; 'all' is advanced."
+        ),
+    )
+    p.add_argument(
+        "--fragmentomics-scope",
+        choices=("auto", "panel", "genome"),
+        default=None,
+        help="Advanced downstream WPS/occupancy/DELFI scope override.",
     )
     p.set_defaults(func=_cmd_run)
 

@@ -712,6 +712,24 @@ def _write_summary_html(manifest, path, project_root=None):
             f"<table><tbody>{''.join(scope_rows)}</tbody></table>"
             f"<p><strong>Interpretation:</strong> {html.escape(str(scope.get('note', '')))}</p>"
         )
+    downstream = manifest.get("downstream") or {}
+    downstream_block = ""
+    if downstream:
+        links = []
+        for key, label in (("summary", "Downstream HTML summary"), ("manifest", "Downstream manifest")):
+            value = downstream.get(key)
+            if value:
+                href = _relative_link(value, link_base)
+                links.append(
+                    f'<li><a href="{html.escape(href, quote=True)}">'
+                    f"{html.escape(label)}</a></li>"
+                )
+        downstream_block = (
+            "<h2>Downstream workflow</h2>"
+            f"<p><strong>Preset:</strong> {html.escape(str(downstream.get('preset', '')))}<br>"
+            f"<strong>Status:</strong> {html.escape(str(downstream.get('status', 'unknown')))}</p>"
+            f"<ul>{''.join(links)}</ul>"
+        )
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CFTK run {html.escape(manifest['run_id'])}</title>
@@ -732,6 +750,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
 <strong>Finished:</strong> {html.escape(manifest.get('finished_at') or 'in progress')}</p>
 {error_block}
 {scope_block}
+{downstream_block}
 {resource_table}
 <h2>Stages</h2><table><thead><tr><th>ID</th><th>Stage</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <h2>Run records</h2><ul>{''.join(record_links)}</ul>

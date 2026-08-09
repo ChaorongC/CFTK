@@ -119,8 +119,18 @@ cftk doctor --json
 cftk --config cftk_init.json process -s 1 2 3 4
 ```
 
-After a successful core run, use the role-aware downstream planner before
-launching differential, fragmentomics, DMR, MESA, and reporting stages:
+After a successful core run, the beginner-friendly downstream command is an
+explicit preset on `cftk run`:
+
+```bash
+cftk run --downstream auto
+```
+
+This reuses valid artifacts, runs the bounded role-aware workflow, and links
+the downstream manifest and HTML summary from the core run summary. Use
+`--downstream fragmentomics` or another preset for a selected workflow;
+`--downstream all` is advanced. For inspection before execution, or for exact
+stage selection, use the role-aware planner:
 
 ```bash
 cftk plan

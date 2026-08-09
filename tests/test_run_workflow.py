@@ -87,6 +87,114 @@ def test_parser_registers_zero_argument_beginner_run(modules):
     assert not args.dry_run
     assert not args.adopt_existing
     assert not args.qc_dinucleotide
+    assert args.downstream is None
+    assert args.fragmentomics_scope is None
+
+
+def test_beginner_run_accepts_explicit_downstream_preset(modules):
+    cftk, _ = modules
+
+    args = cftk.build_parser().parse_args(["run", "--downstream", "fragmentomics"])
+
+    assert args.downstream == "fragmentomics"
+
+    scoped = cftk.build_parser().parse_args([
+        "run", "--downstream", "auto", "--fragmentomics-scope", "panel"
+    ])
+    assert scoped.fragmentomics_scope == "panel"
+
+
+def test_linked_downstream_manifest_is_rendered_in_core_summary(modules, tmp_path):
+    _, run_workflow = modules
+    manifest = {
+        "run_id": "core-1",
+        "status": "complete",
+        "started_at": "now",
+        "finished_at": "now",
+        "stages": [],
+        "downstream": {
+            "preset": "auto",
+            "status": "complete",
+            "run_id": "analysis-1",
+            "manifest": str(tmp_path / "analysis-runs/analysis-1/run.json"),
+            "summary": str(tmp_path / "analysis-runs/analysis-1/run-summary.html"),
+        },
+    }
+    output = tmp_path / "runs/core-1/run-summary.html"
+
+    run_workflow._write_summary_html(manifest, output, tmp_path)
+
+    rendered = output.read_text(encoding="utf-8")
+    assert "Downstream workflow" in rendered
+    assert "analysis-runs/analysis-1/run-summary.html" in rendered
+
+
+def test_run_downstream_calls_existing_analysis_runner(modules, monkeypatch, tmp_path):
+    cftk, run_workflow = modules
+    core_dir = tmp_path / "results/provenance/runs/core-1"
+    core_dir.mkdir(parents=True)
+    core = {"run_id": "core-1", "run_dir": str(core_dir), "status": "complete"}
+    analysis = {
+        "run_id": "analysis-1",
+        "run_dir": str(tmp_path / "results/provenance/analysis-runs/analysis-1"),
+        "status": "complete",
+    }
+    seen = {}
+    monkeypatch.setattr(run_workflow, "run", lambda args: core)
+    monkeypatch.setattr(run_workflow, "_save_attempt", lambda *args: None)
+    monkeypatch.setattr(run_workflow, "_append_event", lambda *args, **kwargs: None)
+
+    import analysis_workflow
+    def fake_analysis(args):
+        seen["args"] = args
+        return analysis
+
+    monkeypatch.setattr(analysis_workflow, "run", fake_analysis)
+
+    args = SimpleNamespace(
+        config=str(tmp_path / "cftk_init.json"),
+        parallel=3,
+        target_bed=None,
+        dry_run=True,
+        adopt_existing=False,
+        qc_dinucleotide=False,
+        downstream="auto",
+    )
+    result = cftk._cmd_run(args)
+
+    assert result["downstream"]["preset"] == "auto"
+    assert result["downstream"]["run_id"] == "analysis-1"
+    assert seen["args"].preset == "auto"
+    assert seen["args"].dry_run is True
+
+
+def test_run_downstream_failure_keeps_core_manifest_link(modules, monkeypatch, tmp_path):
+    cftk, run_workflow = modules
+    core_dir = tmp_path / "results/provenance/runs/core-1"
+    core_dir.mkdir(parents=True)
+    core = {"run_id": "core-1", "run_dir": str(core_dir), "status": "complete"}
+    monkeypatch.setattr(run_workflow, "run", lambda args: core)
+    monkeypatch.setattr(run_workflow, "_save_attempt", lambda *args: None)
+    monkeypatch.setattr(run_workflow, "_append_event", lambda *args, **kwargs: None)
+
+    import analysis_workflow
+    monkeypatch.setattr(analysis_workflow, "run", lambda args: (_ for _ in ()).throw(SystemExit(1)))
+
+    args = SimpleNamespace(
+        config=str(tmp_path / "cftk_init.json"),
+        parallel=None,
+        target_bed=None,
+        dry_run=False,
+        adopt_existing=False,
+        qc_dinucleotide=False,
+        downstream="auto",
+        fragmentomics_scope=None,
+    )
+    with pytest.raises(SystemExit):
+        cftk._cmd_run(args)
+
+    assert core["status"] == "complete"
+    assert core["downstream"]["status"] == "failed"
 
 
 def test_beginner_contract_requires_schema_v2_lock_and_default_tools(

@@ -102,7 +102,21 @@ project configuration, lock file, and outputs when archiving an analysis.
 5. Plan And Run Downstream Analysis
 -----------------------------------
 
-After a successful core run, start with a read-only plan:
+After a successful core run, the beginner-friendly downstream entry point is
+an explicit preset on ``cftk run``:
+
+.. code-block:: bash
+
+   cftk run --downstream auto
+
+This reuses valid core artifacts, runs the bounded role-aware downstream
+workflow, and links its detailed manifest and HTML summary from the core run
+summary. Use ``--downstream fragmentomics`` or another explicit preset when
+you want a different selection. ``--downstream all`` is an advanced option
+because it includes heavier DMR and MESA dependencies.
+
+For inspection without execution, or for expert workflows, use the separate
+read-only plan and analysis commands:
 
 .. code-block:: bash
 
@@ -114,8 +128,10 @@ For core processing and QC, keep execution in this standard mode.
 ``cftk run --parallel N`` can run directly in a shell or inside one
 institutional batch job, and CFTK manages the bounded number of concurrent
 samples for you. It records commands, resources, artifacts, and figures in the
-normal run provenance. Downstream ``cftk analyze`` follows the same direct
-command model unless the advanced job-plan option is selected.
+normal run provenance. Downstream ``cftk run --downstream ...`` and
+``cftk analyze`` use the same direct command model unless the advanced
+job-plan option is selected. ``cftk analyze`` remains available for precise
+stage selection and backward-compatible scripts.
 
 ``auto`` is a small default: one-group projects receive descriptive occupancy,
 WPS, and reporting; two-group projects additionally receive differential
