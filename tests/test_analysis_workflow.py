@@ -353,6 +353,16 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     execution_plan_args = parser.parse_args([
         "plan", "--stage", "delfi", "--execution", "per-sample", "--slurm",
     ])
+    core_plan_args = parser.parse_args([
+        "plan", "--workflow", "core", "--execution", "per-sample", "--slurm",
+    ])
+    process_args = parser.parse_args([
+        "process", "-s", "3", "--sample", "sample_a", "--no-finalize",
+    ])
+    qc_args = parser.parse_args([
+        "qc", "-s", "2", "--sample", "sample_a", "--finalize",
+    ])
+    status_args = parser.parse_args(["status", "--workflow", "core", "--json"])
     analyze_args = parser.parse_args(["analyze", "--stage", "diff", "report"])
     doctor_args = parser.parse_args(["doctor", "--analysis-preset", "descriptive"])
     frag_args = parser.parse_args(["frag", "--wps", "--fragmentomics-scope", "panel"])
@@ -361,6 +371,13 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert plan_args.preset == "comparative"
     assert execution_plan_args.execution == "per-sample"
     assert execution_plan_args.slurm is True
+    assert core_plan_args.workflow == "core"
+    assert process_args.samples == ["sample_a"]
+    assert process_args.no_finalize is True
+    assert qc_args.samples == ["sample_a"]
+    assert qc_args.finalize is True
+    assert status_args.workflow == "core"
+    assert status_args.json is True
     assert analyze_args.stages == ["diff", "report"]
     assert doctor_args.analysis_preset == "descriptive"
     assert frag_args.fragmentomics_scope == "panel"
@@ -381,6 +398,15 @@ def test_plan_dispatches_per_sample_execution_and_rejects_slurm_for_local(
     assert len(calls) == 1
     with pytest.raises(SystemExit, match="requires --execution per-sample"):
         cftk._cmd_plan(SimpleNamespace(execution="local", slurm=True))
+
+
+def test_plan_rejects_core_workflow_with_local_execution(modules):
+    _, cftk = modules
+
+    with pytest.raises(SystemExit, match="--workflow is only valid"):
+        cftk._cmd_plan(SimpleNamespace(
+            execution="local", workflow="core", slurm=False,
+        ))
 
 
 def test_delfi_uses_planned_cores_for_finaletoolkit_workers(monkeypatch, tmp_path):

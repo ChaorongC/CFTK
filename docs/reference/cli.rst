@@ -69,6 +69,14 @@ Commands
       cftk run
       cftk run --dry-run
       cftk run --parallel 2 --qc-dinucleotide
+      cftk run --downstream auto
+
+   By default, ``run`` stops after core processing and QC. ``--downstream``
+   explicitly continues into a role-aware downstream preset, reusing valid
+   artifacts and linking the downstream manifest and HTML summary from the
+   core run summary. ``--downstream all`` is an advanced option; per-sample
+   job plans and Slurm helpers remain separate advanced commands and are never
+   submitted automatically.
 
    ``--adopt-existing`` is required to validate complete outputs that predate a
    run manifest. Partial untrusted outputs are preserved in a timestamped
@@ -78,6 +86,9 @@ Commands
    ``--parallel N`` sets concurrent samples. CFTK divides the configured total
    ``process.cores`` budget across those sample commands and records the result
    in ``resource-plan.json``.
+   ``--fragmentomics-scope`` is an advanced downstream-only override and must
+   be used together with ``--downstream``; it applies the same panel/genome
+   scope contract as ``cftk analyze``.
 
    Every attempt writes ``run.json``, event and command JSONL files, doctor and
    tool-version JSON, output/figure TSVs, and ``run-summary.html`` under
@@ -110,15 +121,48 @@ Commands
    differential or MESA modalities require occupancy or WPS matrices, their
    producer stages are added ahead of the dependent stage.
 
-   ``--execution local`` is the default read-only plan. For expensive
-   fragmentomics stages, ``--execution per-sample`` writes one independent
+   ``--execution local`` is the default read-only plan and the recommended
+   beginner path. Normal execution uses ``cftk run --parallel N`` (or one
+   ordinary institutional batch job containing that command). For expensive
+   fragmentomics or core stages, the advanced ``--execution per-sample`` writes one independent
    sample task plus a dependent cohort finalizer. CFTK never submits jobs or
-   requires a scheduler. Every sample task runs the established ``cftk frag``
-   implementation with ``--parallel 1 --no-finalize``. The finalizer verifies
-   all per-sample tables, creates cohort matrices/figures where applicable,
-   and records the complete stage through ``cftk analyze --adopt-existing``.
+   requires a scheduler. Fragmentomics sample tasks run the established
+   ``cftk frag`` implementation with ``--parallel 1 --no-finalize``; core and
+   QC tasks use their corresponding ``cftk process``/``cftk qc`` boundaries.
+   The finalizer verifies all per-sample outputs, creates cohort
+   matrices/figures where applicable, and records successful completion.
    ``--slurm`` additionally writes an optional Slurm-array helper and
    success-gated finalizer helper under ``results/provenance/job-plans/``.
+
+   Core processing and fragment-length QC can use the same one-sample boundary
+   when a scheduler should own the sample jobs:
+
+   .. code-block:: bash
+
+      cftk plan --workflow core --execution per-sample --slurm
+      cftk plan --workflow process --stage 3 --execution per-sample --slurm
+      cftk plan --workflow qc --stage 2 --execution per-sample --slurm
+
+   ``core`` includes process steps 1-4 and QC step 2. BAM-only projects mark
+   FASTQ-only process steps 1-2 as skipped. QC steps 0, 1, and 3 remain
+   cohort-level because they assemble cohort tables or figures; run them once
+   after the generated sample tasks finish. The generated process step-3
+   finalizer also requires the covered-target ``CollectHsMetrics`` and
+   ``CollectMultipleMetrics`` outputs unless ``--skip-picard-metrics`` was
+   explicitly used for the sample tasks. CFTK never submits the helper; submit
+   it under the user's institutional account.
+
+``status``
+   Advanced, read-only inspection of a generated per-sample job plan. It
+   reports observed sample artifacts and whether each finalizer is pending,
+   ready, complete, or stale (a recorded finalizer whose artifacts no longer
+   satisfy the plan). It does not infer scheduler queue or failure state.
+
+   .. code-block:: bash
+
+      cftk status
+      cftk status --workflow core --json
+      cftk status --plan results/provenance/job-plans/core-*/job-plan.json
 
 ``analyze``
    Run downstream stages with fail-fast preflight, artifact contracts,

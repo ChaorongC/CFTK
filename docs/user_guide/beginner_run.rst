@@ -447,9 +447,10 @@ status; rerunning then rebuilds the evidence without rerunning valid stages.
 Running On Slurm
 ----------------
 
-CFTK does not submit scheduler jobs. Put the same synchronous command in a
-site-appropriate batch script so the scheduler captures resources and terminal
-status. For example:
+The standard beginner workflow still uses one ordinary scheduler allocation:
+put the same synchronous ``cftk run`` command in a site-appropriate batch
+script, and let CFTK manage bounded sample concurrency. CFTK does not submit
+scheduler jobs. For example:
 
 .. code-block:: bash
 
@@ -468,6 +469,11 @@ at a time and gives each multithreaded tool 10 threads. CFTK records that
 calculation in ``resource-plan.json`` and displays it in ``run-summary.html``.
 If ``SLURM_CPUS_PER_TASK`` is present and smaller than ``process.cores``,
 ``cftk doctor`` and the run preflight fail before data processing.
+
+One-sample-per-job arrays are an advanced option documented in
+:doc:`downstream_workflow`. They require ``cftk plan --execution per-sample``
+and an explicit user submission step; they are not needed for the standard
+``cftk run --parallel N`` workflow.
 
 Choose memory from the actual data and tool settings. CPU budgeting does not
 divide memory automatically. Picard's default maximum is 8 GB per concurrently

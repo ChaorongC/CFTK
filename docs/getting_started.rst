@@ -102,13 +102,36 @@ project configuration, lock file, and outputs when archiving an analysis.
 5. Plan And Run Downstream Analysis
 -----------------------------------
 
-After a successful core run, start with a read-only plan:
+After a successful core run, the beginner-friendly downstream entry point is
+an explicit preset on ``cftk run``:
+
+.. code-block:: bash
+
+   cftk run --downstream auto
+
+This reuses valid core artifacts, runs the bounded role-aware downstream
+workflow, and links its detailed manifest and HTML summary from the core run
+summary. Use ``--downstream fragmentomics`` or another explicit preset when
+you want a different selection. ``--downstream all`` is an advanced option
+because it includes heavier DMR and MESA dependencies.
+
+For inspection without execution, or for expert workflows, use the separate
+read-only plan and analysis commands:
 
 .. code-block:: bash
 
    cftk plan
    cftk analyze --dry-run
    cftk analyze
+
+For core processing and QC, keep execution in this standard mode.
+``cftk run --parallel N`` can run directly in a shell or inside one
+institutional batch job, and CFTK manages the bounded number of concurrent
+samples for you. It records commands, resources, artifacts, and figures in the
+normal run provenance. Downstream ``cftk run --downstream ...`` and
+``cftk analyze`` use the same direct command model unless the advanced
+job-plan option is selected. ``cftk analyze`` remains available for precise
+stage selection and backward-compatible scripts.
 
 ``auto`` is a small default: one-group projects receive descriptive occupancy,
 WPS, and reporting; two-group projects additionally receive differential
@@ -119,8 +142,14 @@ occupancy, and DELFI are automatically restricted to panel-overlapping reads
 and regions; the plan records this limitation. See
 :doc:`user_guide/downstream_workflow`.
 
-For a computationally expensive fragmentomics stage, generate independent
-sample tasks instead of placing the cohort in one scheduler allocation:
+Advanced: Per-Sample Job Plans
+------------------------------
+
+Use this only when you intentionally want one scheduler job per sample or
+need to integrate CFTK with an institutional workflow engine. It is not
+required for a normal local run or a single Slurm batch allocation. For a
+computationally expensive fragmentomics stage, generate independent sample
+tasks instead of placing the cohort in one scheduler allocation:
 
 .. code-block:: bash
 
@@ -130,6 +159,15 @@ Add ``--slurm`` only to write an optional Slurm-array helper. CFTK does not
 submit it automatically; the generated finalizer runs only after all sample
 tasks succeed. ``cftk job-plan`` remains a compatibility alias, but new
 workflows should use ``cftk plan --execution per-sample``.
+
+Inspect observed task artifacts and finalizer readiness with:
+
+.. code-block:: bash
+
+   cftk status
+
+``status`` does not query or submit a scheduler. Consult Slurm, PBS, SGE, or
+your institutional workflow system for queued, running, or failed job state.
 
 6. Run Expert Commands
 ----------------------

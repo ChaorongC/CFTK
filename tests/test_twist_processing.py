@@ -242,6 +242,54 @@ def test_existing_markdup_bam_can_receive_missing_picard_metrics(
     assert seen == [(str(bam), "8g")]
 
 
+def test_process_step3_finalizer_requires_complete_picard_metrics(
+    process_module, tmp_path
+):
+    paths = _paths(tmp_path)
+    sample = _sample()
+    markdup = Path(paths["markdup"])
+    markdup.mkdir(parents=True)
+    (markdup / "sample_1.markdup.bam").touch()
+    (markdup / "sample_1.markdup.bam.bai").touch()
+    args = SimpleNamespace(skip_picard_metrics=False)
+
+    with pytest.raises(RuntimeError, match="Picard metric"):
+        process_module._finalize_process_step(3, [sample], paths, args)
+
+    metrics_dir = markdup / "picard_metrics" / "twist-profile"
+    metrics_dir.mkdir(parents=True)
+    (metrics_dir / "sample_1.hs_metrics.txt").touch()
+    (metrics_dir / "sample_1.per_target_coverage.txt").touch()
+    (metrics_dir / "sample_1.multiple_metrics.done").touch()
+    process_module._finalize_process_step(3, [sample], paths, args)
+
+    process_module._finalize_process_step(
+        3, [sample], paths, SimpleNamespace(skip_picard_metrics=True)
+    )
+
+
+def test_process_step2_finalizer_requires_alignment_sidecars(
+    process_module, monkeypatch, tmp_path
+):
+    paths = _paths(tmp_path)
+    sample = _sample()
+    alignment = Path(paths["alignment"])
+    alignment.mkdir(parents=True)
+    bam = alignment / "sample_1.bam"
+    bam.touch()
+    (alignment / "sample_1.bam.bai").touch()
+    monkeypatch.setattr(process_module, "_run_multiqc", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="metrics output"):
+        process_module._finalize_process_step(
+            2, [sample], paths, SimpleNamespace()
+        )
+
+    (alignment / "sample_1.bam.flagstat").touch()
+    (alignment / "sample_1.bam.stats").touch()
+    process_module._finalize_process_step(2, [sample], paths, SimpleNamespace())
+
+
 def test_target_bed_resolution_prefers_cli_override(process_module, tmp_path):
     target_bed = tmp_path / "custom.bed"
     target_bed.touch()

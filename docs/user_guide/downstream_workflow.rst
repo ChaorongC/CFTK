@@ -1,10 +1,24 @@
 Downstream Workflow
 ===================
 
-``cftk run`` finishes core processing and QC. Use ``cftk plan`` before any
-downstream analysis so CFTK can inspect required matrices, BAMs, reference
-components, optional Python packages, external executables, CPU allocation,
-and the exact output contract without processing data.
+``cftk run`` finishes core processing and QC. For the ordinary beginner
+workflow, request downstream analysis explicitly after that run:
+
+.. code-block:: bash
+
+   cftk run --downstream auto
+
+This reuses valid core and downstream artifacts automatically, generates the
+downstream evidence, and links the downstream manifest and summary from the
+core run summary. The ``auto`` preset also includes the self-contained HTML
+report. Other presets run only their selected stages unless ``report`` is
+included explicitly. The core and downstream manifests remain separate and
+immutable so each stage retains its own provenance and resume contract.
+
+Use ``cftk plan`` before a large or expert downstream analysis when you want
+to inspect required matrices, BAMs, reference components, optional Python
+packages, external executables, CPU allocation, and the exact output contract
+without processing data.
 
 .. code-block:: bash
 
@@ -88,12 +102,14 @@ locations:
   ``results/5_mesa/``;
 - report: ``results/report/report.html``.
 
-Optional Per-Sample Jobs
-------------------------
+Advanced: Per-Sample Jobs
+-------------------------
 
-The default execution model is local, bounded in-process parallelism through
-``--parallel``. For an expensive fragmentomics stage, generate a per-sample
-task plan instead:
+The normal execution model is local, bounded in-process parallelism through
+``cftk run --parallel N`` or the corresponding direct command. Use the
+per-sample task plan only when you intentionally want one scheduler job per
+sample or need to connect CFTK to an institutional workflow engine. For an
+expensive fragmentomics stage, generate a per-sample task plan instead:
 
 .. code-block:: bash
 
@@ -121,6 +137,34 @@ arguments from the chosen stage and local policy. It submits one array element
 per sample and a success-gated finalizer job. This does not change FinaleToolkit
 parameters or CFTK output schemas; it only moves independent sample work into
 separate scheduler jobs.
+
+While an advanced plan is in use, inspect its observed artifacts and whether a
+cohort finalizer is ready with ``cftk status``. This is deliberately separate
+from Slurm/PBS/SGE status: the scheduler remains the authority for queued,
+running, canceled, and failed jobs.
+
+Core Processing And QC Jobs
+---------------------------
+
+The same scheduler-neutral plan is available for the long-running core
+processing steps. It writes one task script per sample, then a finalizer that
+validates the complete stage before allowing the next stage to start:
+
+.. code-block:: bash
+
+   cftk plan --workflow core --execution per-sample --slurm
+
+Use ``--workflow process --stage 3`` or ``--workflow qc --stage 2`` to plan a
+single family/stage. The generated sample commands include ``--parallel 1`` and
+``--no-finalize``; the finalizer performs MultiQC, CpG-matrix merging, or
+cohort plotting only after every sample task succeeds. Process step 3 also
+checks the covered-target Picard metrics requested by the default Twist assay.
+
+Only QC step 2 (fragment length) is split across samples. QC steps 0, 1, and 3
+produce cohort-level summaries or reference-dependent tables, so they should be
+run once after the sample-level plan completes. A BAM-only project automatically
+skips process steps 1 and 2 in a core plan. The Slurm helper is an artifact for
+the user to submit under their own lab account; CFTK does not submit jobs.
 
 Resume And Method Boundaries
 ----------------------------
