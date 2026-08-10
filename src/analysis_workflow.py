@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -90,8 +91,8 @@ _STAGE_ALIASES = {
 }
 _PRESETS = {
     "descriptive": _FRAGMENT_STAGES[:2] + ("analysis.report",),
-    "differential": ("analysis.diff",),
-    "dmr": ("analysis.dmr",),
+    "differential": ("analysis.diff", "analysis.report"),
+    "dmr": ("analysis.dmr", "analysis.report"),
     "fragmentomics": _FRAGMENT_STAGES,
     "mesa": ("analysis.mesa",),
     "comparative": ("analysis.diff", "analysis.dmr", "analysis.mesa", "analysis.report"),
@@ -303,6 +304,110 @@ def _config_params(cfg, *keys, default=None):
     return value
 
 
+_MODALITY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def apply_differential_modality_override(cfg, modalities):
+    """Apply a validated CLI-only modality selection to a resolved config."""
+    if modalities is None:
+        return None
+    if isinstance(modalities, str):
+        modalities = [modalities]
+    selected = []
+    for raw_name in modalities:
+        name = str(raw_name).strip()
+        if not _MODALITY_NAME_RE.fullmatch(name):
+            raise AnalysisContractError(
+                "differential modality names must start with a letter or number "
+                "and contain only letters, numbers, underscores, or hyphens"
+            )
+        if name not in selected:
+            selected.append(name)
+    if not selected:
+        raise AnalysisContractError("select at least one differential modality")
+    analysis = cfg.setdefault("analysis", {})
+    diff = analysis.setdefault("diff", {})
+    params = diff.setdefault("params", {})
+    params["modalities"] = selected
+    return selected
+
+
+def _effective_differential_modalities(cfg):
+    return list(
+        _config_params(
+            cfg, "analysis", "diff", "params", "modalities", default=["cpg"]
+        ) or ["cpg"]
+    )
+
+
+def _dmr_sample_selection(cfg):
+    """Resolve the DMR sample subset in sample-sheet order."""
+    configured = _config_params(cfg, "analysis", "dmr", "samples", default={}) or {}
+    if not isinstance(configured, dict):
+        return {}, ["analysis.dmr.samples must be a group-to-sample-list mapping"]
+
+    selection = {}
+    errors = []
+    sample_groups = cfg.get("samples", {})
+    for group, entries in sample_groups.items():
+        available = [str(entry.get("name")) for entry in entries]
+        requested = configured.get(group)
+        if requested in (None, []):
+            selection[group] = available
+            continue
+        if not isinstance(requested, (list, tuple)):
+            errors.append(
+                f"analysis.dmr.samples[{group!r}] must be a list of sample names"
+            )
+            selection[group] = available
+            continue
+        requested = [str(name) for name in requested]
+        bad = [name for name in requested if name not in available]
+        if bad:
+            errors.append(
+                f"DMR sample(s) {bad} are not present in group {group!r}"
+            )
+        selected = set(requested) - set(bad)
+        selection[group] = [name for name in available if name in selected]
+
+    unknown_groups = sorted(set(configured) - set(sample_groups))
+    if unknown_groups:
+        errors.append(
+            f"analysis.dmr.samples contains unknown group(s): {unknown_groups}"
+        )
+    return selection, errors
+
+
+def _dmr_input_records(context):
+    """Return resolved DMR bedGraph inputs and sample-selection errors."""
+    selection, errors = _dmr_sample_selection(context["cfg"])
+    records = []
+    entries_by_group = context["cfg"].get("samples", {})
+    methylation = Path(context["paths"]["methylation"])
+    for group, entries in entries_by_group.items():
+        selected = set(selection.get(group, ()))
+        for entry in entries:
+            name = str(entry.get("name"))
+            if name in selected:
+                records.append({
+                    "group": group,
+                    "sample": name,
+                    "path": (methylation / f"{name}_CpG.bedGraph").resolve(),
+                })
+    return selection, errors, records
+
+
+def _validate_differential_override(context, stages):
+    if (
+        context.get("differential_modalities_override") is not None
+        and "analysis.diff" not in stages
+    ):
+        raise AnalysisContractError(
+            "--modality requires a workflow selection that includes differential "
+            "analysis"
+        )
+
+
 def _load_context(args):
     config_path = Path(args.config).expanduser().resolve()
     if not config_path.is_file():
@@ -330,6 +435,9 @@ def _load_context(args):
         )
     except (SystemExit, OSError, KeyError, ValueError) as exc:
         raise AnalysisContractError(f"project configuration could not be resolved: {exc}") from exc
+    modality_override = apply_differential_modality_override(
+        cfg, getattr(args, "differential_modalities", None)
+    )
     paths = get_work_paths(cfg)
     scope_request = getattr(args, "fragmentomics_scope", None)
     return {
@@ -341,6 +449,8 @@ def _load_context(args):
         "paths": paths,
         "fragmentomics_scope_request": scope_request,
         "fragmentomics_scope": None,
+        "differential_modalities": _effective_differential_modalities(cfg),
+        "differential_modalities_override": modality_override,
         "identity": {
             "config_sha256": _sha256(config_path),
             "lock_sha256": _sha256(lock_path),
@@ -540,8 +650,8 @@ def _stage_requirements(context, stage_id):
         requirements["references"].append(
             "R packages annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, and org.Hs.eg.db"
         )
-        for sample in context["samples"]:
-            requirements["inputs"].append(Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph")
+        _, _, records = _dmr_input_records(context)
+        requirements["inputs"].extend(record["path"] for record in records)
     elif stage_id in _FRAGMENT_STAGES:
         requirements["inputs"].extend(get_bam(sample, paths) for sample in context["samples"])
         scope = {"mode": "genome"}
@@ -635,6 +745,8 @@ def _stage_command(context, stage_id, args):
     kind = _STAGE_META[stage_id]["kind"]
     if kind == "diff":
         command.append("diff")
+        command.append("--modality")
+        command.extend(_effective_differential_modalities(context["cfg"]))
     elif kind == "dmr":
         command.append("dmr")
     elif kind == "mesa":
@@ -710,10 +822,14 @@ def _required_inputs(context, stage_id, *, planned_outputs=()):
             path = Path(get_matrix_path(paths, modality))
             missing_or_empty(path, f"matrix for modality {modality!r}")
     elif kind == "dmr":
-        for sample in context["samples"]:
-            path = Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph"
+        _, selection_errors, records = _dmr_input_records(context)
+        errors.extend(selection_errors)
+        for record in records:
+            path = record["path"]
             if not path.is_file() or path.stat().st_size == 0:
-                errors.append(f"CpG bedGraph for {sample['name']} is missing or empty: {path}")
+                errors.append(
+                    f"CpG bedGraph for {record['sample']} is missing or empty: {path}"
+                )
     elif kind == "mesa":
         modalities = _config_params(cfg, "analysis", "mesa", "params", "modalities", default=["cpg"]) or ["cpg"]
         for modality in modalities:
@@ -902,6 +1018,7 @@ def analysis_doctor_checks(
 
 def build_plan(context, args, *, doctor_report=None):
     stages = resolve_stages(getattr(args, "preset", "auto"), context["cfg"], getattr(args, "stages", None))
+    _validate_differential_override(context, stages)
     role_errors = []
     if any(stage in _COMPARATIVE_STAGES for stage in stages):
         role_errors = comparison_role_errors(context["cfg"])
@@ -945,6 +1062,14 @@ def build_plan(context, args, *, doctor_report=None):
         "project_identity": context["identity"],
         "roles": _role_info(context["cfg"]),
         "fragmentomics_scope": context.get("fragmentomics_scope"),
+        "differential_modalities": (
+            _effective_differential_modalities(context["cfg"])
+            if "analysis.diff" in stages else []
+        ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
+        ),
         "resource_plan": resources,
         "stages": records,
         "doctor": doctor_report,
@@ -971,6 +1096,7 @@ def plan(args):
     try:
         context = _load_context(args)
         stages = resolve_stages(getattr(args, "preset", "auto"), context["cfg"], getattr(args, "stages", None))
+        _validate_differential_override(context, stages)
         _populate_scope_context(context, stages)
         from doctor import run_doctor
         report_args = SimpleNamespace(
@@ -978,6 +1104,7 @@ def plan(args):
             skip_picard_metrics=True, parallel=getattr(args, "parallel", None),
             analysis_stages=list(stages), analysis_only=True,
             fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
+            differential_modalities=context.get("differential_modalities_override"),
         )
         doctor_report = run_doctor(report_args)
         plan_payload = build_plan(context, args, doctor_report=doctor_report)
@@ -1024,7 +1151,87 @@ def _load_previous(provenance, identity):
     return None
 
 
-def _load_previous_stage(provenance, identity, stage_id):
+def _stage_input_signatures(context, stage_id):
+    """Return content signatures for inputs that govern safe stage reuse."""
+    if stage_id not in {"analysis.diff", "analysis.dmr"}:
+        return None
+    if stage_id == "analysis.dmr":
+        _, _, records = _dmr_input_records(context)
+        signatures = []
+        for record in records:
+            path = record["path"]
+            item = {
+                "group": record["group"],
+                "sample": record["sample"],
+                "path": str(path),
+            }
+            if path.is_file() and path.stat().st_size > 0:
+                item.update({
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256(path),
+                    "status": "available",
+                })
+            else:
+                item["status"] = "missing"
+            signatures.append(item)
+        return signatures
+    signatures = []
+    for modality in _effective_differential_modalities(context["cfg"]):
+        path = Path(get_matrix_path(context["paths"], modality)).resolve()
+        record = {"modality": modality, "path": str(path)}
+        if path.is_file() and path.stat().st_size > 0:
+            record.update({
+                "bytes": path.stat().st_size,
+                "sha256": _sha256(path),
+                "status": "available",
+            })
+        else:
+            record["status"] = "missing"
+        signatures.append(record)
+    return signatures
+
+
+def _input_signatures_match(stage, current):
+    if current is None:
+        return True
+    previous = stage.get("input_signatures")
+    if not isinstance(previous, list) or not previous:
+        return False
+    by_path = {record.get("path"): record for record in previous}
+    for record in current:
+        prior = by_path.get(record.get("path"))
+        if not prior:
+            return False
+        for key in ("modality", "group", "sample", "status", "bytes", "sha256"):
+            if prior.get(key) != record.get(key):
+                return False
+    return True
+
+
+def _expected_paths_covered(stage, specs):
+    if specs is None:
+        return True
+    previous = {
+        str(Path(record["path"]).resolve())
+        for record in stage.get("expected", [])
+        if record.get("required", True) and record.get("path")
+    }
+    required = {
+        str(Path(record["path"]).resolve())
+        for record in specs
+        if record.get("required", True) and record.get("path")
+    }
+    return required.issubset(previous)
+
+
+def _load_previous_stage(
+    provenance,
+    identity,
+    stage_id,
+    *,
+    specs=None,
+    input_signatures=None,
+):
     """Find a trusted completed stage across compatible workflow selections."""
 
     provenance = Path(provenance).resolve()
@@ -1057,7 +1264,12 @@ def _load_previous_stage(provenance, identity, stage_id):
             (item for item in manifest.get("stages", []) if item.get("id") == stage_id),
             None,
         )
-        if stage and stage.get("status") in trusted:
+        if (
+            stage
+            and stage.get("status") in trusted
+            and _expected_paths_covered(stage, specs)
+            and _input_signatures_match(stage, input_signatures)
+        ):
             return manifest
     return None
 
@@ -1122,7 +1334,7 @@ def _stage_args(context, stage_id, args):
         resource = _resource_plan(context, (stage_id,), args)["stages"][0]
         return SimpleNamespace(
             **common,
-            modality=None,
+            modality=_effective_differential_modalities(context["cfg"]),
             cores=resource["threads_per_sample"],
         )
     if kind == "dmr":
@@ -1157,6 +1369,7 @@ def run(args):
     try:
         context = _load_context(args)
         stages = resolve_stages(getattr(args, "preset", "auto"), context["cfg"], getattr(args, "stages", None))
+        _validate_differential_override(context, stages)
         _populate_scope_context(context, stages)
         resources = _resource_plan(context, stages, args)
     except (AnalysisContractError, ScopeError, OSError, ValueError) as exc:
@@ -1167,6 +1380,14 @@ def run(args):
         "stages": list(stages),
         "parallel": getattr(args, "parallel", None),
         "fragmentomics_scope": getattr(args, "fragmentomics_scope", None),
+        "differential_modalities": (
+            _effective_differential_modalities(context["cfg"])
+            if "analysis.diff" in stages else []
+        ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
+        ),
     }
     options = {
         **identity_options,
@@ -1199,6 +1420,14 @@ def run(args):
         "options": options,
         "roles": _role_info(context["cfg"]),
         "fragmentomics_scope": context.get("fragmentomics_scope"),
+        "differential_modalities": (
+            _effective_differential_modalities(context["cfg"])
+            if "analysis.diff" in stages else []
+        ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
+        ),
         "resource_plan": resources,
         "previous_run_id": previous.get("run_id") if previous else None,
         "status": "running",
@@ -1229,6 +1458,7 @@ def run(args):
                 "finished_at": None,
                 "expected": _artifact_specs(context, stage_id),
                 "requirements": _stage_requirements(context, stage_id),
+                "input_signatures": [],
                 "outputs": [],
                 "figures": [],
                 "quarantined": [],
@@ -1250,6 +1480,7 @@ def run(args):
         skip_picard_metrics=True, parallel=getattr(args, "parallel", None),
         analysis_stages=list(stages), analysis_only=True,
         fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
+        differential_modalities=context.get("differential_modalities_override"),
         adopt_existing=bool(getattr(args, "adopt_existing", False)),
     )
     preflight = run_doctor(doctor_args)
@@ -1281,7 +1512,23 @@ def run(args):
         for stage_record in manifest["stages"]:
             stage_id = stage_record["id"]
             specs = stage_record["expected"]
-            if _core._can_resume(previous, identity, stage_id, specs):
+            input_signatures = _stage_input_signatures(context, stage_id)
+            if input_signatures is not None:
+                stage_record["input_signatures"] = input_signatures
+            previous_stage = next(
+                (
+                    item for item in (previous or {}).get("stages", [])
+                    if item.get("id") == stage_id
+                ),
+                None,
+            )
+            refresh_report = stage_id == "analysis.report" and len(stages) > 1
+            if (
+                not refresh_report
+                and _core._can_resume(previous, identity, stage_id, specs)
+                and previous_stage
+                and _input_signatures_match(previous_stage, input_signatures)
+            ):
                 stage_record["status"] = "resumed"
                 stage_record["finished_at"] = _utc_now()
                 _core._record_artifacts(stage_record, specs)
@@ -1294,8 +1541,14 @@ def run(args):
                 for spec in specs
                 if spec.get("owned", True) and Path(spec["path"]).exists()
             ]
-            compatible_stage = _load_previous_stage(provenance, identity, stage_id)
-            if compatible_stage and not issues:
+            compatible_stage = _load_previous_stage(
+                provenance,
+                identity,
+                stage_id,
+                specs=specs,
+                input_signatures=input_signatures,
+            )
+            if compatible_stage and not issues and not refresh_report:
                 stage_record["status"] = "resumed"
                 stage_record["finished_at"] = _utc_now()
                 stage_record["reused_from_run_id"] = compatible_stage.get("run_id")
@@ -1308,15 +1561,25 @@ def run(args):
                 )
                 _save_attempt(manifest, run_dir, provenance)
                 continue
-            if getattr(args, "adopt_existing", False) and not issues:
+            if (
+                getattr(args, "adopt_existing", False)
+                and not issues
+                and not refresh_report
+            ):
                 stage_record["status"] = "adopted"
                 stage_record["finished_at"] = _utc_now()
                 _core._record_artifacts(stage_record, specs)
                 _core._append_event(events_path, "stage_adopted", stage=stage_id)
                 _save_attempt(manifest, run_dir, provenance)
                 continue
-            previous_stage = next((item for item in (previous or {}).get("stages", []) if item.get("id") == stage_id), None)
-            retryable = bool(previous and previous.get("project_identity") == identity and previous_stage and previous_stage.get("status") in {"running", "failed", "interrupted", "complete", "resumed", "adopted"})
+            retryable = bool(
+                previous
+                and previous.get("project_identity") == identity
+                and previous_stage
+                and previous_stage.get("status") in {
+                    "running", "failed", "interrupted", "complete", "resumed", "adopted"
+                }
+            ) or bool(refresh_report and compatible_stage)
             if existing and (retryable or getattr(args, "adopt_existing", False)):
                 stage_record["quarantined"] = _core._quarantine_paths(existing, context["paths"]["results"], provenance / "quarantine" / run_id)
                 _core._append_event(events_path, "stage_outputs_quarantined", stage=stage_id, count=len(stage_record["quarantined"]))

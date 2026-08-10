@@ -66,7 +66,8 @@ The major commands are:
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
 - ``diff``: run PCA, differential testing, and summary plots.
-- ``dmr``: run DMR preparation, metilene, annotation, and plotting.
+- ``dmr``: advanced direct DMR command; prefer ``analyze --preset dmr`` for
+  managed preflight, resume, and report integration.
 - ``frag``: run occupancy, WPS, DELFI, end motif, and cleavage workflows.
 - ``mesa``: run modality performance and multimodal MESA modeling.
 - ``merge``: build feature matrices from user-provided files.
@@ -123,6 +124,7 @@ read-only plan and analysis commands:
    cftk plan
    cftk analyze --dry-run
    cftk analyze
+   cftk analyze --preset differential --modality cpg
 
 For core processing and QC, keep execution in this standard mode.
 ``cftk run --parallel N`` can run directly in a shell or inside one
@@ -141,6 +143,15 @@ not group-name inference. With the default Twist targeted profile, WPS,
 occupancy, and DELFI are automatically restricted to panel-overlapping reads
 and regions; the plan records this limitation. See
 :doc:`user_guide/downstream_workflow`.
+
+The managed differential preset is a cohort-level analysis and refreshes the
+final report. The managed DMR preset similarly records the selected CpG
+bedGraphs, resumes only when their content is unchanged, and refreshes the
+final report. Select a temporary, reproducibly recorded modality list with
+``--modality cpg`` or ``--modality cpg occupancy wps``. CFTK automatically
+adds known matrix-producing stages, reuses unchanged matrices, and invalidates
+differential resume when selected matrix content changes. Per-sample job plans
+apply to long sample-level producers, not to the cohort comparison itself.
 
 Advanced: Per-Sample Job Plans
 ------------------------------
@@ -181,10 +192,14 @@ corresponding optional commands shown below.
 
    cftk --config cftk_init.json process -s 1 2 3 4
    cftk --config cftk_init.json qc -s 1 2 3
-   cftk --config cftk_init.json diff
+   cftk analyze --preset differential --modality cpg
    cftk --config cftk_init.json frag --wps
    cftk --config cftk_init.json mesa --performance --mesa-model --loocv
    cftk --config cftk_init.json report
+
+The low-level ``cftk diff`` command remains available for compatibility, but
+it bypasses managed preflight, matrix-sensitive resume, and immutable analysis
+provenance. Prefer ``cftk analyze --preset differential`` for new projects.
 
 
 7. Expert Compatibility Runs

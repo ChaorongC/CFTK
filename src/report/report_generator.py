@@ -1917,9 +1917,162 @@ def _sec_differential(rd):
                 items.append((mod.upper(), p))
         return _dropdown_gallery("Modality:", items, uid=f"{uid_prefix}_{stem}")
 
+    def _number(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return "NA"
+        if not np.isfinite(value):
+            return "NA"
+        return f"{value:.4g}"
+
+    result_records = []
+    for mod in modalities:
+        path = os.path.join(diff_base, mod, "differential_result.tsv")
+        record = {
+            "modality": mod,
+            "path": path,
+            "row_count": None,
+            "mean_columns": [],
+            "top": None,
+            "error": None,
+        }
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            record["error"] = "missing"
+        else:
+            try:
+                columns = pd.read_csv(path, sep="\t", nrows=0).columns.tolist()
+                record["mean_columns"] = [
+                    str(column) for column in columns
+                    if str(column).startswith("mean_")
+                ]
+                feature_column = "feature" if "feature" in columns else columns[0]
+                use_columns = list(dict.fromkeys([
+                    feature_column,
+                    *record["mean_columns"][:2],
+                    *[
+                        column for column in ("MWU_pvalue", "qvalue", "meandiff")
+                        if column in columns
+                    ],
+                ]))
+                candidates = []
+                row_count = 0
+                for chunk in pd.read_csv(
+                    path,
+                    sep="\t",
+                    usecols=use_columns,
+                    chunksize=100_000,
+                ):
+                    row_count += len(chunk)
+                    for column in ("qvalue", "MWU_pvalue"):
+                        if column in chunk.columns:
+                            chunk[column] = pd.to_numeric(chunk[column], errors="coerce")
+                    sort_columns = [
+                        column for column in ("qvalue", "MWU_pvalue")
+                        if column in chunk.columns
+                    ]
+                    if sort_columns:
+                        chunk = chunk.sort_values(
+                            sort_columns, kind="mergesort", na_position="last"
+                        )
+                    candidates.append(chunk.head(10))
+                record["row_count"] = row_count
+                if candidates:
+                    top = pd.concat(candidates, ignore_index=True)
+                    sort_columns = [
+                        column for column in ("qvalue", "MWU_pvalue")
+                        if column in top.columns
+                    ]
+                    if sort_columns:
+                        top = top.sort_values(
+                            sort_columns, kind="mergesort", na_position="last"
+                        )
+                    record["top"] = top.head(10)
+            except Exception as exc:
+                record["error"] = f"unreadable: {exc}"
+        result_records.append(record)
+
+    summary_rows = []
+    top_rows = []
+    for record in result_records:
+        mod = record["modality"]
+        table = record["top"]
+        href = os.path.relpath(
+            record["path"], os.path.join(rd, "report")
+        ).replace(os.sep, "/")
+        if record["row_count"] is None:
+            features = "NA"
+            contrast = "NA"
+            result_link = html.escape(record["error"] or "unavailable")
+        else:
+            features = f"{record['row_count']:,}"
+            mean_columns = record["mean_columns"]
+            contrast = (
+                f"{mean_columns[1][5:]} - {mean_columns[0][5:]}"
+                if len(mean_columns) >= 2 else "second group - first group"
+            )
+            result_link = (
+                f'<a href="{html.escape(href, quote=True)}" '
+                f'download>Full TSV</a>'
+            )
+            feature_column = (
+                "feature" if table is not None and "feature" in table.columns
+                else table.columns[0] if table is not None and len(table.columns) else None
+            )
+            for _, row in table.iterrows() if table is not None else ():
+                top_rows.append({
+                    "modality": mod,
+                    "feature": row.get(feature_column, "NA") if feature_column else "NA",
+                    "effect": row.get("meandiff", np.nan),
+                    "p": row.get("MWU_pvalue", np.nan),
+                    "q": row.get("qvalue", np.nan),
+                })
+        summary_rows.append(
+            "<tr>"
+            f'<td style="padding:7px 12px;font-weight:600;">{html.escape(mod.upper())}</td>'
+            f'<td style="padding:7px 12px;">{features}</td>'
+            f'<td style="padding:7px 12px;">{html.escape(contrast)}</td>'
+            f'<td style="padding:7px 12px;">{result_link}</td>'
+            "</tr>"
+        )
+
+    summary_table = (
+        '<div style="overflow-x:auto;border:1px solid var(--rule);border-radius:8px;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+        '<thead><tr><th>Modality</th><th>Result rows</th>'
+        '<th>Effect direction</th><th>Result</th></tr></thead>'
+        f'<tbody>{"".join(summary_rows)}</tbody></table></div>'
+        if summary_rows else _missing("No feature-level differential results were found.")
+    )
+
+    top_body = "".join(
+        "<tr>"
+        f'<td style="padding:6px 10px;font-weight:600;">{html.escape(str(row["modality"]).upper())}</td>'
+        f'<td style="padding:6px 10px;font-family:var(--mono);">{html.escape(str(row["feature"]))}</td>'
+        f'<td style="padding:6px 10px;">{_number(row["effect"])}</td>'
+        f'<td style="padding:6px 10px;">{_number(row["p"])}</td>'
+        f'<td style="padding:6px 10px;">{_number(row["q"])}</td>'
+        "</tr>"
+        for row in top_rows
+    )
+    top_table = (
+        '<p style="font-size:14px;margin-bottom:10px;">The first ten rows per modality '
+        'after ordering by q-value and p-value are shown for navigation only; '
+        'no significance threshold is applied here.</p>'
+        '<div style="overflow-x:auto;max-height:440px;border:1px solid var(--rule);border-radius:8px;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:13.5px;">'
+        '<thead><tr><th>Modality</th><th>Feature</th><th>Mean difference</th>'
+        '<th>MWU p-value</th><th>BH q-value</th></tr></thead>'
+        f'<tbody>{top_body}</tbody></table></div>'
+        if top_rows else _missing("No readable feature-level result rows were found.")
+    )
+
     # Pre-compute all blocks outside f-string to avoid double-brace escaping
+    overview_block = _coll("Feature-level result tables", summary_table, open_=True)
+    top_block = _coll("Lowest q-value features", top_table, open_=True)
+    pca_block = _coll("PCA plots (static)", _dd("pca", "diff"), open_=True)
     violin_block = _coll("Violin plots (static)", _dd("violin", "diff"), open_=True)
-    heatmap_block = _coll("DMC heatmaps (static)", _dd("heatmap", "diff"), open_=True)
+    heatmap_block = _coll("Feature heatmaps (static)", _dd("heatmap", "diff"), open_=True)
     dmr_chart = _plotly_from_data("dmr_volcano", height=460, square=True)
     dmr_desc = (
         '<p style="font-size:14.5px;color:#000000;margin-bottom:8px;">'
@@ -1938,13 +2091,20 @@ def _sec_differential(rd):
         <span class="section-tag">diff</span>
       </div>
 
-      <h3 class="subsec-title" id="part3_1">3.1 Violin</h3>
+      <h3 class="subsec-title" id="part3_1">3.1 Feature-Level Results</h3>
+      {overview_block}
+      {top_block}
+
+      <h3 class="subsec-title" id="part3_2">3.2 PCA</h3>
+      {pca_block}
+
+      <h3 class="subsec-title" id="part3_3">3.3 Violin</h3>
       {violin_block}
 
-      <h3 class="subsec-title" id="part3_2">3.2 Heatmap</h3>
+      <h3 class="subsec-title" id="part3_4">3.4 Feature Heatmap</h3>
       {heatmap_block}
 
-      <h3 class="subsec-title" id="part3_3">3.3 DMR Analysis</h3>
+      <h3 class="subsec-title" id="part3_5">3.5 DMR Analysis</h3>
       {dmr_block}
       {dmr_table_block}
     </section>"""
@@ -2115,9 +2275,11 @@ def _build_sidebar(rd, groups, include_power=False):
       <a href="#part2_3" class="nav-link nav-sub"></span>2.3 Dinucleotide</a>
       <a href="#part2_4" class="nav-link nav-sub"></span>2.4 PCA</a>
       <a href="#part3"  class="nav-link nav-top"></span>3 Differential</a>
-      <a href="#part3_1" class="nav-link nav-sub"></span>3.1 Violin</a>
-      <a href="#part3_2" class="nav-link nav-sub"></span>3.2 Heatmap</a>
-      <a href="#part3_3" class="nav-link nav-sub"></span>3.3 DMR</a>
+      <a href="#part3_1" class="nav-link nav-sub"></span>3.1 Results</a>
+      <a href="#part3_2" class="nav-link nav-sub"></span>3.2 PCA</a>
+      <a href="#part3_3" class="nav-link nav-sub"></span>3.3 Violin</a>
+      <a href="#part3_4" class="nav-link nav-sub"></span>3.4 Heatmap</a>
+      <a href="#part3_5" class="nav-link nav-sub"></span>3.5 DMR</a>
       <a href="#part4"  class="nav-link nav-top"></span>4 Fragmentomics</a>
       <a href="#part4_1" class="nav-link nav-sub"></span>4.1 Occupancy</a>
       <a href="#part4_2" class="nav-link nav-sub"></span>4.2 DELFI</a>

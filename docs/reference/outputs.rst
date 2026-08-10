@@ -62,7 +62,11 @@ CFTK writes results below ``<output_dir>/results``.
      - QC result tables and figures. The beginner guide includes rendered
        examples for the fragment-length and methylation-distribution outputs.
    * - ``3_differential/``
-     - Differential, PCA, heatmap, violin, and DMR outputs.
+     - Differential result tables, PCA intermediates/figures, heatmaps,
+       violin plots, and DMR outputs. Managed differential manifests also
+       record the selected modalities and SHA-256 input-matrix signatures;
+       managed DMR manifests record the selected samples and CpG bedGraph
+       signatures.
    * - ``4_fragmentomics/occupancy/``
      - Occupancy features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/wps/``
@@ -95,4 +99,8 @@ and ``run.json`` distinguishes ``planned``, ``pending``, ``running``,
 ``complete``, ``complete_with_reporting_error``, ``failed``, ``interrupted``,
 ``skipped``, ``resumed``, and ``adopted`` states. Artifact validation checks
 required file existence and nonempty content; it does not currently calculate
-checksums for large outputs.
+checksums for large outputs. Differential stage reuse is stricter: every
+selected input matrix must match the SHA-256 signature stored in the trusted
+analysis manifest. The final report links each differential TSV and shows
+modality context, PCA/violin/heatmap figures, and a lowest-q navigation table
+without applying a significance threshold.

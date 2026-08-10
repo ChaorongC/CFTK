@@ -715,6 +715,19 @@ def run_doctor(args):
         profile = _check_profile(checks, raw, config_path)
         _check_lock(checks, raw, config_path, profile)
     if cfg is not None:
+        modality_override = getattr(args, "differential_modalities", None)
+        if modality_override is not None:
+            try:
+                from analysis_workflow import apply_differential_modality_override
+                apply_differential_modality_override(cfg, modality_override)
+            except (RuntimeError, ValueError) as exc:
+                checks.fail("analysis.plan", str(exc))
+                modality_override = None
+            if not getattr(args, "analysis_preset", None) and not analysis_stages:
+                checks.fail(
+                    "analysis.plan",
+                    "--modality requires --analysis-preset or --analysis-stage diff",
+                )
         if getattr(args, "analysis_preset", None) or analysis_stages:
             try:
                 from analysis_workflow import resolve_stages
@@ -726,6 +739,11 @@ def run_doctor(args):
             except (RuntimeError, ValueError) as exc:
                 checks.fail("analysis.plan", str(exc))
                 analysis_stages = []
+            if modality_override is not None and "analysis.diff" not in analysis_stages:
+                checks.fail(
+                    "analysis.plan",
+                    "--modality requires a workflow selection that includes differential analysis",
+                )
         reference_records = _check_reference_companions(
             checks,
             cfg,
@@ -760,6 +778,7 @@ def run_doctor(args):
         "analysis_preset": getattr(args, "analysis_preset", None),
         "analysis_stages": analysis_stages,
         "fragmentomics_scope": getattr(args, "fragmentomics_scope", None),
+        "differential_modalities": getattr(args, "differential_modalities", None),
         "summary": {
             "pass": sum(item["status"] == "PASS" for item in checks.items),
             "warn": warnings,

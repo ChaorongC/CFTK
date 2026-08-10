@@ -74,6 +74,18 @@ def _cmd_run(args):
     from run_workflow import run
 
     downstream = getattr(args, "downstream", None)
+    modalities = getattr(args, "differential_modalities", None)
+    if modalities and not downstream:
+        raise SystemExit(
+            "[run] ERROR: --modality requires --downstream; use "
+            "'cftk analyze --preset differential --modality ...' for a "
+            "downstream-only rerun."
+        )
+    if modalities and downstream not in {"auto", "differential", "comparative", "all"}:
+        raise SystemExit(
+            f"[run] ERROR: --modality is not applicable to downstream preset "
+            f"{downstream!r}."
+        )
     if getattr(args, "fragmentomics_scope", None) and not downstream:
         raise SystemExit(
             "[run] ERROR: --fragmentomics-scope requires --downstream; "
@@ -94,6 +106,7 @@ def _cmd_run(args):
         stages=None,
         parallel=args.parallel,
         fragmentomics_scope=getattr(args, "fragmentomics_scope", None),
+        differential_modalities=modalities,
         dry_run=bool(args.dry_run),
         adopt_existing=bool(args.adopt_existing),
         json=False,
@@ -170,6 +183,11 @@ def _cmd_plan(args):
             "--workflow."
         )
     if execution == "per-sample":
+        if getattr(args, "differential_modalities", None):
+            raise SystemExit(
+                "[plan] ERROR: differential analysis is cohort-level; use the "
+                "default local execution plan with --modality."
+            )
         return _write_job_plan(args)
     if getattr(args, "slurm", False):
         raise SystemExit("[plan] ERROR: --slurm requires --execution per-sample")
@@ -390,10 +408,10 @@ def _cmd_diff(args):
     args.top_n      = diff_p.get("top_n_heatmap", 500)
     args.output_dir = paths["differential"]
 
-    modalities = (
-        [args.modality] if getattr(args, "modality", None)
-        else diff_p.get("modalities", ["cpg"])
-    )
+    requested_modalities = getattr(args, "modality", None)
+    if isinstance(requested_modalities, str):
+        requested_modalities = [requested_modalities]
+    modalities = requested_modalities or diff_p.get("modalities", ["cpg"])
 
     for mod in modalities:
         matrix = get_matrix_path(paths, mod)
@@ -1068,6 +1086,19 @@ def build_parser():
     )
     sub = parser.add_subparsers(dest="mode", metavar="<command>")
 
+    def add_managed_differential_modalities(command_parser):
+        command_parser.add_argument(
+            "--modality",
+            dest="differential_modalities",
+            nargs="+",
+            default=None,
+            metavar="NAME",
+            help=(
+                "Differential modalities for this managed run, for example "
+                "'--modality cpg occupancy wps'. Requires a differential stage."
+            ),
+        )
+
     # init
     p = sub.add_parser("init",
         help="Create or validate a project and prepare its reference genome.")
@@ -1138,6 +1169,7 @@ def build_parser():
         "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
         help="Scope WPS/occupancy/DELFI reads and regions (default: assay-aware auto).",
     )
+    add_managed_differential_modalities(p)
     p.set_defaults(func=_cmd_doctor)
 
     # beginner run
@@ -1176,6 +1208,7 @@ def build_parser():
         default=None,
         help="Advanced downstream WPS/occupancy/DELFI scope override.",
     )
+    add_managed_differential_modalities(p)
     p.set_defaults(func=_cmd_run)
 
     # downstream planning and analysis
@@ -1203,6 +1236,7 @@ def build_parser():
         "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
         help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
     )
+    add_managed_differential_modalities(p)
     p.add_argument(
         "--slurm", action="store_true",
         help="With --execution per-sample, also write an optional Slurm-array helper without submitting it.",
@@ -1238,6 +1272,7 @@ def build_parser():
         "--fragmentomics-scope", choices=("auto", "panel", "genome"), default=None,
         help="Scope WPS/occupancy/DELFI (default: panel for Twist, genome otherwise).",
     )
+    add_managed_differential_modalities(p)
     p.add_argument("--dry-run", action="store_true", help="Write the downstream plan and evidence without executing stages.")
     p.add_argument("--adopt-existing", action="store_true", help="Validate and adopt complete outputs from expert commands.")
     p.add_argument("--job-plan-id", default=None, help=argparse.SUPPRESS)
@@ -1334,8 +1369,8 @@ def build_parser():
 
     # diff
     p = sub.add_parser("diff",
-        help="Part 2: Differential analysis — PCA / violin / heatmap.")
-    p.add_argument("--modality", default=None)
+        help="Advanced: run differential analysis directly without managed provenance.")
+    p.add_argument("--modality", nargs="+", default=None, metavar="NAME")
     p.set_defaults(func=_cmd_diff)
 
     # dmr

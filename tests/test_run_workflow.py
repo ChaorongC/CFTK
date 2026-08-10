@@ -103,6 +103,11 @@ def test_beginner_run_accepts_explicit_downstream_preset(modules):
     ])
     assert scoped.fragmentomics_scope == "panel"
 
+    differential = cftk.build_parser().parse_args([
+        "run", "--downstream", "differential", "--modality", "cpg", "wps",
+    ])
+    assert differential.differential_modalities == ["cpg", "wps"]
+
 
 def test_linked_downstream_manifest_is_rendered_in_core_summary(modules, tmp_path):
     _, run_workflow = modules
@@ -159,6 +164,7 @@ def test_run_downstream_calls_existing_analysis_runner(modules, monkeypatch, tmp
         adopt_existing=False,
         qc_dinucleotide=False,
         downstream="auto",
+        differential_modalities=["cpg"],
     )
     result = cftk._cmd_run(args)
 
@@ -166,6 +172,7 @@ def test_run_downstream_calls_existing_analysis_runner(modules, monkeypatch, tmp
     assert result["downstream"]["run_id"] == "analysis-1"
     assert seen["args"].preset == "auto"
     assert seen["args"].dry_run is True
+    assert seen["args"].differential_modalities == ["cpg"]
 
 
 def test_run_downstream_failure_keeps_core_manifest_link(modules, monkeypatch, tmp_path):
