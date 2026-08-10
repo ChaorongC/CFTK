@@ -646,6 +646,27 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert job_args.slurm is True
 
 
+def test_parser_reports_installed_package_version(modules, monkeypatch, capsys):
+    _, cftk = modules
+    monkeypatch.setattr(cftk.metadata, "version", lambda name: "9.8.7")
+
+    with pytest.raises(SystemExit) as exc_info:
+        cftk.build_parser().parse_args(["--version"])
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out == "cftk 9.8.7\n"
+
+
+def test_package_version_has_checkout_fallback(modules, monkeypatch):
+    _, cftk = modules
+
+    def missing(_name):
+        raise cftk.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(cftk.metadata, "version", missing)
+    assert cftk._package_version() == "development"
+
+
 def test_plan_dispatches_per_sample_execution_and_rejects_slurm_for_local(
     modules, monkeypatch
 ):

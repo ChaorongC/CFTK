@@ -6,7 +6,10 @@ Global Options
 
 .. code-block:: text
 
-   cftk [--config PATH] <command> ...
+   cftk [--version] [--config PATH] <command> ...
+
+``--version``
+   Print the installed CFTK package version and exit.
 
 ``--config PATH``
    Path to ``cftk_init.json``. Defaults to ``./cftk_init.json``.

@@ -2,6 +2,7 @@
 """cftk — cfDNA multimodal epigenetic analysis toolkit."""
 
 import argparse
+from importlib import metadata
 import json
 import os
 import sys
@@ -1074,11 +1075,22 @@ def _sa(obj, k, v):
 
 # ── Argument parser ───────────────────────────────────────────────────────────
 
+def _package_version():
+    """Return installed distribution metadata without duplicating its version."""
+    try:
+        return metadata.version("cftk")
+    except metadata.PackageNotFoundError:
+        return "development"
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="cftk",
         description="cfDNA multimodal epigenetic analysis toolkit",
         formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {_package_version()}"
     )
     parser.add_argument(
         "--config", default="./cftk_init.json", metavar="PATH",
