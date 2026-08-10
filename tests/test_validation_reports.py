@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pysam
 import pytest
 
@@ -8,6 +10,10 @@ from scripts.validation.compare_duplicate_marking import (
     _write_comparison_figure,
     _write_comparison_table,
     compare_sample,
+)
+from scripts.validation.export_downstream_documentation import (
+    OUTPUT_NAMES,
+    export_documentation_evidence,
 )
 from scripts.validation.summarize_doctor_audit import summarize
 from scripts.validation.summarize_workflow_run import summarize as summarize_workflow
@@ -233,3 +239,117 @@ def test_qc_figure_labels_omit_sample_identifiers():
 
     assert labels == ["Control 1", "sALS 1"]
     assert all("private_" not in label for label in labels)
+
+
+def test_downstream_documentation_export_is_sanitized_and_nonblank(tmp_path):
+    project = tmp_path / "private_project"
+    output = tmp_path / "public_export"
+    samples = [f"source_control_{index}" for index in range(1, 6)]
+    samples += [f"source_case_{index}" for index in range(1, 6)]
+    groups = ["Control"] * 5 + ["sALS"] * 5
+    roles = ["control"] * 5 + ["case"] * 5
+    project.mkdir()
+    pd.DataFrame({
+        "sample": samples,
+        "group": groups,
+        "role": roles,
+    }).to_csv(project / "samples.tsv", sep="\t", index=False)
+
+    differential = project / "results/3_differential"
+    for modality_index, modality in enumerate(("cpg", "occupancy", "wps"), start=1):
+        modality_dir = differential / modality
+        modality_dir.mkdir(parents=True)
+        pd.DataFrame({
+            "sample": samples,
+            "group": groups,
+            "PC1": np.arange(10, dtype=float) * modality_index,
+            "PC2": np.arange(10, dtype=float)[::-1],
+        }).set_index("sample").to_csv(modality_dir / "pca_coordinates.txt", sep="\t")
+        pd.DataFrame({
+            "PC": ["PC1", "PC2"],
+            "variance_explained_pct": [60.0, 20.0],
+        }).to_csv(modality_dir / "pca_variance.txt", sep="\t", index=False)
+
+    dmr_dir = differential / "dmr"
+    dmr_dir.mkdir()
+    (dmr_dir / "dmr_raw.bed").write_text(
+        "chr1\t10\t20\t0.01\t2.0\t5\t0.1\t0.2\t10\t8\n"
+        "chr2\t20\t30\t0.50\t-1.0\t4\t0.3\t0.4\t7\t8\n"
+    )
+
+    fragmentomics = project / "results/4_fragmentomics"
+    for modality in ("occupancy", "wps"):
+        modality_dir = fragmentomics / modality
+        modality_dir.mkdir(parents=True)
+        pd.DataFrame(
+            [[1.0 + row + column / 10 for column in range(10)] for row in range(3)],
+            columns=samples,
+            index=[f"region_{row}" for row in range(3)],
+        ).to_csv(modality_dir / f"{modality}_matrix.tsv", sep="\t")
+
+    delfi_dir = fragmentomics / "delfi"
+    motif_dir = fragmentomics / "end_motif"
+    delfi_dir.mkdir(parents=True)
+    motif_dir.mkdir()
+    (delfi_dir / "fragmentomics_scope.json").write_text(json.dumps({
+        "resolved_scope": {
+            "mode": "panel",
+            "bins_count": 44,
+            "target_sha256": "public-target-hash",
+            "note": "panel-only technical output",
+        }
+    }))
+    for sample_index, sample in enumerate(samples):
+        (delfi_dir / f"{sample}_delfi.tsv").write_text(
+            "#contig\tstart\tstop\tratio\tratio_corrected\n"
+            f"chr1\t1\t2\t0.2\t{0.2 + sample_index / 100}\n"
+            f"chr2\t2\t3\t0.3\t{0.3 + sample_index / 100}\n"
+        )
+        (motif_dir / f"{sample}_4mer.tsv").write_text(
+            "AAAA\t0.02\nCCCC\t0.03\nGGGG\t0.01\nTTTT\t0.04\n"
+        )
+
+    mesa_dir = project / "results/5_mesa"
+    mesa_dir.mkdir(parents=True)
+    pd.DataFrame({
+        "best_roc_auc_mean": [0.6, 0.7, 0.8],
+    }, index=["cpg", "occupancy", "wps"]).to_csv(
+        mesa_dir / "modality_performance.tsv", sep="\t"
+    )
+    pd.DataFrame({
+        "sample_id": samples,
+        "y_true": [0] * 5 + [1] * 5,
+        "cpg": np.linspace(0.1, 0.9, 10),
+        "occupancy": np.linspace(0.2, 0.8, 10),
+        "wps": np.linspace(0.15, 0.85, 10),
+        "Multimodal": np.linspace(0.05, 0.95, 10),
+    }).to_csv(mesa_dir / "loocv_predictions.tsv", sep="\t", index=False)
+
+    report_dir = project / "results/report"
+    report_dir.mkdir(parents=True)
+    (report_dir / "report.html").write_text(
+        "Processing cfDNA QC Differential DMR Occupancy WPS DELFI End motif MESA"
+    )
+
+    summary = export_documentation_evidence(project, output)
+
+    assert summary["cohort"]["groups"] == {"Control": 5, "sALS": 5}
+    assert summary["fragmentomics"]["cleavage"] == "not_run"
+    assert summary["report"]["sections_discovered"] == {
+        "Processing": True,
+        "cfDNA QC": True,
+        "Differential / DMR": True,
+        "Fragmentomics": True,
+        "MESA": True,
+    }
+    for key in ("differential", "fragmentomics", "mesa", "report"):
+        path = output / OUTPUT_NAMES[key]
+        assert path.is_file()
+        assert path.stat().st_size > 1_000
+
+    public_json = (output / OUTPUT_NAMES["summary"]).read_text()
+    assert "source_control" not in public_json
+    assert "source_case" not in public_json
+    assert str(project) not in public_json
+    assert "Control_1" in public_json
+    assert "sALS_5" in public_json

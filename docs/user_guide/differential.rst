@@ -97,15 +97,18 @@ effect direction, full-TSV link, the ten lowest-q rows for navigation, and the
 PCA/violin/heatmap figures. The compact table does not apply a significance
 threshold; use the full result table for interpretation.
 
-.. figure:: ../_static/tutorial_differential_outputs.png
-   :alt: Fixed-seed synthetic PCA, DMR volcano, feature distribution, and heatmap examples
+.. figure:: ../_static/validation_10sample_differential.png
+   :alt: Observed CFTK PCA and raw DMR summaries for five controls and five sALS samples
    :width: 100%
 
-   Fixed-seed **synthetic illustrative output** showing the four visual types
-   associated with differential analysis. It is not derived from the ALS
-   cohort, does not demonstrate a CFTK biological result, and must not be used
-   to choose a cutoff or claim group separation. Use the TSV and text files
-   above for the actual run.
+   Observed output from **five controls and five sALS samples** in the completed
+   downstream technical example. The panels show the three configured PCA
+   outputs and raw DMR calls (q < 0.05 is highlighted). This is a workflow and
+   file-contract example, not biological or clinical validation; it must not be
+   used to choose a cutoff or claim group separation. The full tables and
+   provenance files above remain authoritative. The sanitized aggregate
+   metadata can be downloaded as
+   :download:`JSON <../_static/validation_10sample_downstream_summary.json>`.
 
 Regenerate Plots
 ----------------

@@ -1,0 +1,72 @@
+{
+  "cohort": {
+    "groups": {
+      "Control": 5,
+      "sALS": 5
+    },
+    "purpose": "Technical workflow example; not biological or clinical validation.",
+    "sample_aliases": [
+      "Control_1",
+      "Control_2",
+      "Control_3",
+      "Control_4",
+      "Control_5",
+      "sALS_1",
+      "sALS_2",
+      "sALS_3",
+      "sALS_4",
+      "sALS_5"
+    ]
+  },
+  "differential": {
+    "dmr_rows": 88917,
+    "dmr_rows_q_lt_0_05": 1026,
+    "modalities": [
+      "cpg",
+      "occupancy",
+      "wps"
+    ],
+    "pca_sample_count": 10
+  },
+  "fragmentomics": {
+    "cleavage": "not_run",
+    "delfi_numeric_values": 5340345,
+    "delfi_samples": 10,
+    "end_motif_samples": 10,
+    "occupancy_matrix_rows": 437869,
+    "scope": {
+      "bins_count": 538712,
+      "mode": "panel",
+      "note": "Targeted-panel mode restricts WPS, occupancy, and DELFI to reads and intervals overlapping the configured target BED; these outputs are not genome-wide measurements.",
+      "target_sha256": "82f54b6e17d92c98e07e9204cddeffad9bd4b7882e925e123954013b33b65398"
+    },
+    "wps_matrix_rows": 437869
+  },
+  "mesa": {
+    "interpretation": "Technical workflow output only; not model performance validation.",
+    "loocv_auc": {
+      "Multimodal": 0.7600000000000001,
+      "cpg": 0.36,
+      "occupancy": 0.8200000000000001,
+      "wps": 0.8
+    },
+    "sample_count": 10,
+    "screening_best_auc": {
+      "cpg": 0.7733,
+      "occupancy": 1.0,
+      "wps": 1.0
+    }
+  },
+  "report": {
+    "html_present": true,
+    "html_size_bytes": 13557653,
+    "sections_discovered": {
+      "Differential / DMR": true,
+      "Fragmentomics": true,
+      "MESA": true,
+      "Processing": true,
+      "cfDNA QC": true
+    }
+  },
+  "schema_version": 1
+}

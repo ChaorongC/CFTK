@@ -145,15 +145,20 @@ command for modalities that return per-sample tables.
 
 ``cftk vis --mode frag`` writes PNG/PDF summaries beside these directories,
 including occupancy, DELFI, end-motif, cleavage, and comparison plots when
-the corresponding inputs exist. The following fixed-seed figure shows the
-five output types together so a beginner can recognize the expected shape of
-each result before running a full cohort.
+the corresponding inputs exist. The figure below is a real five-control/
+five-sALS technical example. It includes the completed occupancy, WPS, DELFI,
+and end-motif outputs and explicitly marks cleavage as not run.
 
-.. figure:: ../_static/tutorial_fragmentomics_outputs.png
-   :alt: Fixed-seed synthetic occupancy, WPS, DELFI, end-motif, and cleavage examples
+.. figure:: ../_static/validation_10sample_fragmentomics.png
+   :alt: Observed panel-scoped occupancy, WPS, DELFI, and end-motif outputs for five controls and five sALS samples
    :width: 100%
 
-   Fixed-seed **synthetic illustrative output types**. The panels contain no
-   human-derived measurements and are not a DELFI score, nucleosome result,
-   cleavage finding, or validation figure. The per-sample tables and matrices
-   listed above are the authoritative outputs of a real run.
+   Observed output from **five controls and five sALS samples**. WPS,
+   occupancy, and DELFI are restricted to reads and intervals overlapping the
+   configured Twist target panel, so these are panel-overlap summaries rather
+   than genome-wide measurements or the original genome-wide DELFI score. The
+   run did not produce cleavage output. These are technical workflow outputs,
+   not biological or clinical validation. The per-sample tables, matrices, and
+   scope sidecars listed above are authoritative. Download the sanitized
+   aggregate metadata:
+   :download:`JSON <../_static/validation_10sample_downstream_summary.json>`.

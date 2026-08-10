@@ -808,7 +808,7 @@ _MULTIQC_TITLE = {
 def _build_replace_names_tsv(samples: list, out_path: str):
     """
     Write a MultiQC replace-names TSV that maps original FASTQ stems
-    to cftk sample names (e.g. S10000Nr4_R1 → Control_2_R1).
+    to cftk sample names (e.g. source_sample_R1 -> Control_2_R1).
 
     MultiQC uses the "Input filename:" field inside trimming reports to name
     samples.  Even after we patch that field, this TSV acts as a safety net
