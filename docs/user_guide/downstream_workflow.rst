@@ -11,9 +11,11 @@ workflow, request downstream analysis explicitly after that run:
 This reuses valid core and downstream artifacts automatically, generates the
 downstream evidence, and links the downstream manifest and summary from the
 core run summary. The ``auto`` preset also includes the self-contained HTML
-report. Other presets run only their selected stages unless ``report`` is
-included explicitly. The core and downstream manifests remain separate and
-immutable so each stage retains its own provenance and resume contract.
+report. The ``differential`` preset also refreshes that report after its
+feature-level outputs are ready. Other presets run only their selected stages
+unless ``report`` is included explicitly. The core and downstream manifests
+remain separate and immutable so each stage retains its own provenance and
+resume contract.
 
 Use ``cftk plan`` before a large or expert downstream analysis when you want
 to inspect required matrices, BAMs, reference components, optional Python
@@ -25,6 +27,7 @@ without processing data.
    cftk plan
    cftk analyze --dry-run
    cftk analyze
+   cftk analyze --preset differential --modality cpg
 
 ``auto`` is intentionally bounded. For a one-group project it selects
 occupancy, WPS, and an HTML report. For an explicitly role-defined two-group
@@ -37,6 +40,27 @@ their matrices do not yet exist, CFTK adds the corresponding feature stage and
 runs it before the dependent analysis. The resolved order and dependency edges
 are recorded in the plan; other configured modalities must already provide a
 matrix or preflight remains blocked.
+
+Select Differential Modalities
+-------------------------------
+
+Initialization records ``cpg``, ``occupancy``, and ``wps`` as the default
+differential modalities. Override that list for one managed run without
+editing JSON:
+
+.. code-block:: bash
+
+   cftk plan --preset differential --modality cpg
+   cftk analyze --preset differential --modality cpg
+   cftk analyze --preset differential --modality cpg occupancy wps
+
+The resolved list is stored in the plan, manifest, and reconstructed stage
+command. CFTK adds occupancy or WPS producers when those matrices are selected,
+then reuses valid unchanged outputs automatically. Each selected matrix is
+recorded with its SHA-256 content signature at the differential stage. If its
+content changes, CFTK reruns the differential stage instead of reusing stale
+results. A missing requested matrix that has no selected producer fails
+preflight with its expected path.
 
 Targeted-panel scope
 --------------------
@@ -102,6 +126,11 @@ locations:
   ``results/5_mesa/``;
 - report: ``results/report/report.html``.
 
+The differential report section shows the discovered modality tables, effect
+direction, result-row count, links to full TSV files, the ten lowest-q rows per
+modality for navigation, and PCA/violin/heatmap figures. The displayed rows do
+not apply or imply a significance threshold.
+
 Advanced: Per-Sample Jobs
 -------------------------
 
@@ -114,6 +143,11 @@ expensive fragmentomics stage, generate a per-sample task plan instead:
 .. code-block:: bash
 
    cftk plan --stage delfi end_motif --execution per-sample
+
+Differential analysis itself compares the full cohort and is therefore never
+split into one sample per job. Per-sample plans can accelerate selected
+fragmentomics matrix producers; their success-gated finalizer must complete
+before the cohort-level differential stage runs.
 
 Each generated task runs one sample with ``--parallel 1 --no-finalize`` and
 therefore has its own terminal status, command-ledger entries, and retry
@@ -175,6 +209,10 @@ validated and reused automatically when a later full suite includes it.
 Existing untracked outputs with no trusted stage manifest still require
 ``--adopt-existing``; partial retry outputs are quarantined under
 ``results/provenance/quarantine/``.
+
+Differential reuse also requires the current selected matrices to match the
+SHA-256 signatures recorded by the trusted stage. Older differential manifests
+without these signatures are not silently trusted for automatic reuse.
 
 This orchestration layer does not change the scientific implementation of its
 stages. The current differential command uses feature-level Mann-Whitney tests

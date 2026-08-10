@@ -70,6 +70,7 @@ Commands
       cftk run --dry-run
       cftk run --parallel 2 --qc-dinucleotide
       cftk run --downstream auto
+      cftk run --downstream differential --modality cpg
 
    By default, ``run`` stops after core processing and QC. ``--downstream``
    explicitly continues into a role-aware downstream preset, reusing valid
@@ -89,6 +90,9 @@ Commands
    ``--fragmentomics-scope`` is an advanced downstream-only override and must
    be used together with ``--downstream``; it applies the same panel/genome
    scope contract as ``cftk analyze``.
+   ``--modality NAME [NAME ...]`` selects differential matrices for this run
+   without rewriting the config and requires a downstream preset containing
+   differential analysis.
 
    Every attempt writes ``run.json``, event and command JSONL files, doctor and
    tool-version JSON, output/figure TSVs, and ``run-summary.html`` under
@@ -109,6 +113,7 @@ Commands
 
       cftk plan
       cftk plan --preset all
+      cftk plan --preset differential --modality cpg occupancy wps
       cftk plan --stage diff report --json
       cftk plan --stage delfi --execution per-sample --slurm
 
@@ -120,6 +125,9 @@ Commands
    default. If configured
    differential or MESA modalities require occupancy or WPS matrices, their
    producer stages are added ahead of the dependent stage.
+   A differential modality override is recorded in the plan and cannot be
+   combined with ``--execution per-sample`` because the comparison is a
+   cohort-level stage.
 
    ``--execution local`` is the default read-only plan and the recommended
    beginner path. Normal execution uses ``cftk run --parallel N`` (or one
@@ -172,6 +180,7 @@ Commands
    .. code-block:: bash
 
       cftk analyze --dry-run
+      cftk analyze --preset differential --modality cpg
       cftk analyze --preset fragmentomics
       cftk analyze --preset comparative
       cftk analyze --preset all
@@ -183,6 +192,12 @@ Commands
    DELFI inputs; it defaults to panel scope for Twist. Complete stages recorded
    by a compatible prior analysis manifest are validated and reused
    automatically, even when the current preset selects additional stages.
+   The ``differential`` preset also refreshes ``results/report/report.html``.
+   ``--modality NAME [NAME ...]`` overrides only the selected run and is stored
+   in the plan, manifest, and reconstructed command. Differential stage reuse
+   additionally requires matching SHA-256 signatures for all selected input
+   matrices; changing a matrix reruns the comparison while unchanged matrices
+   remain reusable.
    ``--adopt-existing`` remains available for complete outputs produced before
    any trusted analysis manifest; untrusted partial outputs are quarantined
    before a retry. See :doc:`../user_guide/downstream_workflow`.
@@ -227,11 +242,15 @@ Commands
    and Streamlit app described in :doc:`../user_guide/model_power`.
 
 ``diff``
-   Run PCA, differential testing, and differential visualizations.
+   Advanced compatibility command that runs PCA, differential testing, and
+   visualizations directly. It does not provide managed preflight,
+   matrix-sensitive resume, evidence generation, or immutable analysis-run
+   provenance. Prefer ``cftk analyze --preset differential`` for new work.
 
    .. code-block:: bash
 
       cftk --config cftk_init.json diff --modality cpg
+      cftk --config cftk_init.json diff --modality cpg occupancy wps
 
 ``dmr``
    Run DMR analysis.

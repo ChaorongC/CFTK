@@ -96,6 +96,41 @@ def test_fragmentomics_section_includes_occupancy(tmp_path, monkeypatch):
     assert "4.5 WPS" in section
 
 
+def test_differential_section_embeds_result_context_and_top_features(
+    tmp_path, monkeypatch
+):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "src"))
+    from report import report_generator
+
+    read_calls = []
+    real_read_csv = report_generator.pd.read_csv
+
+    def tracked_read_csv(*args, **kwargs):
+        read_calls.append(kwargs.copy())
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(report_generator.pd, "read_csv", tracked_read_csv)
+
+    output = tmp_path / "3_differential" / "cpg"
+    output.mkdir(parents=True)
+    (output / "differential_result.tsv").write_text(
+        "feature\tMWU_pvalue\tqvalue\tmeandiff\tmean_Control\tmean_Case\n"
+        "chr1_10\t0.02\t0.04\t0.1\t0.2\t0.3\n"
+        "chr1_20<script>\t0.01\t0.03\t-0.2\t0.4\t0.2\n"
+    )
+
+    section = report_generator._sec_differential(str(tmp_path))
+
+    assert "3.1 Feature-Level Results" in section
+    assert "3.2 PCA" in section
+    assert "Case - Control" in section
+    assert "Lowest q-value features" in section
+    assert "chr1_20&lt;script&gt;" in section
+    assert "../3_differential/cpg/differential_result.tsv" in section
+    assert "no significance threshold is applied" in section
+    assert any(call.get("chunksize") == 100_000 for call in read_calls)
+
+
 def test_source_results_and_qc_scores_are_discovered_from_markdup_bams(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "src"))
     from report import report_generator

@@ -121,6 +121,59 @@ def test_presets_are_role_aware_and_do_not_infer_group_meaning(modules):
     assert analysis_workflow.comparison_role_errors(two_group) == []
     assert analysis_workflow.comparison_role_errors(one_group)
     assert "analysis.mesa" in analysis_workflow.resolve_stages("all", two_group)
+    assert analysis_workflow.resolve_stages("differential", two_group) == (
+        "fragmentomics.occupancy",
+        "fragmentomics.wps",
+        "analysis.diff",
+        "analysis.report",
+    )
+
+
+def test_differential_modality_override_controls_dependencies_and_plan(
+    modules, tmp_path
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    selected = analysis_workflow.apply_differential_modality_override(
+        context["cfg"], ["cpg", "wps", "cpg"]
+    )
+    context["differential_modalities"] = selected
+    context["differential_modalities_override"] = selected
+    args = _args(
+        context,
+        preset="differential",
+        differential_modalities=["cpg", "wps"],
+    )
+
+    stages = analysis_workflow.resolve_stages(
+        args.preset, context["cfg"], args.stages
+    )
+    plan = analysis_workflow.build_plan(context, args)
+
+    assert selected == ["cpg", "wps"]
+    assert stages == (
+        "fragmentomics.wps", "analysis.diff", "analysis.report",
+    )
+    assert plan["differential_modalities"] == ["cpg", "wps"]
+    diff = next(stage for stage in plan["stages"] if stage["id"] == "analysis.diff")
+    assert "--modality cpg wps" in diff["command"]
+
+
+def test_differential_modality_override_rejects_non_differential_workflow(
+    modules, tmp_path
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    context["differential_modalities_override"] = ["cpg"]
+
+    with pytest.raises(
+        analysis_workflow.AnalysisContractError,
+        match="includes differential analysis",
+    ):
+        analysis_workflow.build_plan(
+            context,
+            _args(context, preset="report", differential_modalities=["cpg"]),
+        )
 
 
 def test_artifact_contract_handles_single_sample_descriptive_outputs(modules, tmp_path):
@@ -213,6 +266,92 @@ def test_report_stage_resumes_only_after_valid_artifact_contract(modules, tmp_pa
     assert second["status"] == "complete"
     assert second["stages"][0]["status"] == "resumed"
     assert (Path(second["run_dir"]) / "evidence/workflow_artifact_inventory.tsv").is_file()
+
+
+def test_differential_resume_requires_matching_matrix_content(
+    modules, tmp_path, monkeypatch
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    context["cfg"]["analysis"]["diff"]["params"]["modalities"] = ["cpg"]
+    context["differential_modalities"] = ["cpg"]
+    context["differential_modalities_override"] = None
+    matrix = Path(context["paths"]["cpg_matrix"]) / "cpg_matrix.tsv"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text("feature\tcontrol\nchr1_1\t0.1\n")
+    output = Path(context["paths"]["differential"]) / "cpg/differential_result.tsv"
+    monkeypatch.setattr(analysis_workflow, "_load_context", lambda args: context)
+    monkeypatch.setattr(
+        analysis_workflow,
+        "_artifact_specs",
+        lambda *args: [analysis_workflow._spec(output, "differential result")],
+    )
+    import doctor
+    monkeypatch.setattr(doctor, "run_doctor", _doctor_pass)
+    calls = []
+
+    def execute(context, stage_id, args):
+        calls.append(stage_id)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("feature\tqvalue\nchr1_1\t0.5\n")
+
+    monkeypatch.setattr(analysis_workflow, "_execute_stage", execute)
+    args = _args(context, stages=["diff"])
+
+    first = analysis_workflow.run(args)
+    second = analysis_workflow.run(args)
+    matrix.write_text("feature\tcontrol\nchr1_1\t0.2\n")
+    third = analysis_workflow.run(args)
+
+    assert calls == ["analysis.diff", "analysis.diff"]
+    assert first["stages"][0]["status"] == "complete"
+    assert second["stages"][0]["status"] == "resumed"
+    assert third["stages"][0]["status"] == "complete"
+    assert (
+        first["stages"][0]["input_signatures"][0]["sha256"]
+        != third["stages"][0]["input_signatures"][0]["sha256"]
+    )
+
+
+def test_differential_preset_refreshes_attached_report(
+    modules, tmp_path, monkeypatch
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    context["cfg"]["analysis"]["diff"]["params"]["modalities"] = ["cpg"]
+    context["differential_modalities"] = ["cpg"]
+    context["differential_modalities_override"] = None
+    matrix = Path(context["paths"]["cpg_matrix"]) / "cpg_matrix.tsv"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text("feature\tcontrol\nchr1_1\t0.1\n")
+    outputs = {
+        "analysis.diff": Path(context["paths"]["differential"]) / "cpg/result.tsv",
+        "analysis.report": Path(context["paths"]["report"]) / "report.html",
+    }
+    monkeypatch.setattr(analysis_workflow, "_load_context", lambda args: context)
+    monkeypatch.setattr(
+        analysis_workflow,
+        "_artifact_specs",
+        lambda context, stage: [analysis_workflow._spec(outputs[stage], stage)],
+    )
+    import doctor
+    monkeypatch.setattr(doctor, "run_doctor", _doctor_pass)
+    calls = []
+
+    def execute(context, stage_id, args):
+        calls.append(stage_id)
+        outputs[stage_id].parent.mkdir(parents=True, exist_ok=True)
+        outputs[stage_id].write_text(f"{stage_id}\n")
+
+    monkeypatch.setattr(analysis_workflow, "_execute_stage", execute)
+    args = _args(context, preset="differential")
+
+    first = analysis_workflow.run(args)
+    second = analysis_workflow.run(args)
+
+    assert calls == ["analysis.diff", "analysis.report", "analysis.report"]
+    assert [stage["status"] for stage in first["stages"]] == ["complete", "complete"]
+    assert [stage["status"] for stage in second["stages"]] == ["resumed", "complete"]
 
 
 def test_adopted_outputs_resume_without_requiring_adoption_again(modules, tmp_path, monkeypatch):
@@ -349,7 +488,9 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     _, cftk = modules
     parser = cftk.build_parser()
 
-    plan_args = parser.parse_args(["plan", "--preset", "comparative"])
+    plan_args = parser.parse_args([
+        "plan", "--preset", "comparative", "--modality", "cpg", "wps",
+    ])
     execution_plan_args = parser.parse_args([
         "plan", "--stage", "delfi", "--execution", "per-sample", "--slurm",
     ])
@@ -363,12 +504,15 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
         "qc", "-s", "2", "--sample", "sample_a", "--finalize",
     ])
     status_args = parser.parse_args(["status", "--workflow", "core", "--json"])
-    analyze_args = parser.parse_args(["analyze", "--stage", "diff", "report"])
+    analyze_args = parser.parse_args([
+        "analyze", "--stage", "diff", "report", "--modality", "cpg",
+    ])
     doctor_args = parser.parse_args(["doctor", "--analysis-preset", "descriptive"])
     frag_args = parser.parse_args(["frag", "--wps", "--fragmentomics-scope", "panel"])
     job_args = parser.parse_args(["job-plan", "--stage", "delfi", "end_motif", "--slurm"])
 
     assert plan_args.preset == "comparative"
+    assert plan_args.differential_modalities == ["cpg", "wps"]
     assert execution_plan_args.execution == "per-sample"
     assert execution_plan_args.slurm is True
     assert core_plan_args.workflow == "core"
@@ -379,6 +523,7 @@ def test_parser_exposes_planning_and_analysis_commands(modules):
     assert status_args.workflow == "core"
     assert status_args.json is True
     assert analyze_args.stages == ["diff", "report"]
+    assert analyze_args.differential_modalities == ["cpg"]
     assert doctor_args.analysis_preset == "descriptive"
     assert frag_args.fragmentomics_scope == "panel"
     assert job_args.stages == ["delfi", "end_motif"]

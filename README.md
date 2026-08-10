@@ -136,6 +136,7 @@ stage selection, use the role-aware planner:
 cftk plan
 cftk analyze --dry-run
 cftk analyze
+cftk analyze --preset differential --modality cpg
 ```
 
 The `auto` preset runs descriptive occupancy/WPS/reporting for a one-group
@@ -145,6 +146,13 @@ before `cftk analyze --preset all`. DMR and MESA remain explicit because they
 introduce R/external-tool and modeling dependencies. Every attempt records a
 preflight report, stage contracts, command mirror, evidence, and HTML summary
 under `results/provenance/analysis-runs/<run-id>/`.
+
+The differential preset is cohort-level and refreshes the final report. Use
+`--modality cpg occupancy wps` on `run --downstream differential`, `plan`, or
+`analyze` to override the configured differential modalities for one recorded
+run without editing JSON. CFTK creates known precursor matrices when selected,
+reuses unchanged matrices, and reruns differential analysis when a matrix
+content checksum changes.
 
 The default Twist targeted profile automatically restricts WPS, occupancy, and
 DELFI to panel-overlapping reads and regions. Review the recorded scope in the
