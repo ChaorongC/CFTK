@@ -209,3 +209,24 @@ sentence:
 The figures and raw tables are descriptive records for the selected technical
 subset. They are not a user-facing acceptance gate, and they do not replace
 independent biological or clinical validation.
+
+Step 5: Export Public Documentation Evidence
+---------------------------------------------
+
+The maintainer documentation panels are regenerated from the completed
+five-control/five-sALS result tables with deterministic public aliases. Run
+this command only from a private validation workspace; the input project root
+must not be committed:
+
+.. code-block:: bash
+
+   python scripts/validation/export_downstream_documentation.py \
+       --project-root /path/to/private/cftk_validation_run \
+       --output-dir docs/_static
+
+The exporter streams the large matrices, checks the exact 5+5 sample contract,
+and writes four PNGs plus ``validation_10sample_downstream_summary.json``. It
+does not copy BAMs, source tables, the private report, sample identifiers, or
+absolute paths. The generated figures are documentation evidence only; they
+must retain the explicit technical-example and targeted-panel limitations used
+on the public user-guide pages.

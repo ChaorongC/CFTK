@@ -53,13 +53,20 @@ MESA writes a compact set of tables, a serialized model, and LOOCV figures:
    |-- mesa_heatmap.png / mesa_heatmap.pdf
    `-- mesa_spearman.png / mesa_spearman.pdf
 
-The synthetic visual below mirrors those three plot families and the
-prediction table. It is intentionally illustrative: it is not an observed
-ALS model, does not estimate performance for a cohort, and does not replace
-inspection of ``loocv_predictions.tsv`` and the model settings.
+The observed visual below combines those plot families with the prediction
+table for five controls and five sALS samples. It is a technical workflow
+example only. In particular, perfect-looking internal screening values can
+occur in a ten-sample run and do not estimate performance for a cohort or a
+clinical assay. Inspect ``loocv_predictions.tsv``, the model settings, and the
+provenance manifest before interpreting any result.
 
-.. figure:: ../_static/tutorial_mesa_outputs.png
-   :alt: Fixed-seed synthetic MESA ROC, prediction correlation, and per-sample prediction examples
+.. figure:: ../_static/validation_10sample_mesa.png
+   :alt: Observed MESA screening, LOOCV ROC, aliased predictions, and score correlations for five controls and five sALS samples
    :width: 100%
 
-   Fixed-seed synthetic MESA output types for documentation orientation only.
+   Observed MESA output from **five controls and five sALS samples**. The
+   internal screening bars and LOOCV curves are descriptive artifacts from this
+   ten-sample technical run, not biological or clinical validation and not a
+   recommended acceptance threshold. Download the sanitized aggregate
+   metadata:
+   :download:`JSON <../_static/validation_10sample_downstream_summary.json>`.

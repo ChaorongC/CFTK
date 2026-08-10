@@ -60,18 +60,24 @@ dinucleotide QC stage was not run, the report displays an explicit
 ``Dinucleotide QC was not produced`` notice and the command needed to generate
 it; it does not substitute a synthetic or partial plot.
 
-The preview below is a static render of the tracked public ``sample_report.html``
-demonstration. It contains demo labels and values only; it is not an observed
-patient report or a result from the validation cohort. It predates the current
-default and may display legacy CHH-derived conversion values. Current default
-processing produces CpG and M-bias evidence, not CHH/CHG-derived conversion
-metrics. A real report should be archived with the config, lock, command
-ledger, run manifest, and source result tables that produced it.
+The preview below is a sanitized static overview derived from the completed
+five-control/five-sALS technical report. It displays the discovered report
+sections and aggregate artifact counts without embedding patient identifiers,
+source paths, or the private HTML. The underlying ``report.html`` remains the
+authoritative interactive report and should be archived with the config, lock,
+command ledger, run manifest, and source result tables that produced it. This
+technical example is not biological or clinical validation; targeted
+fragmentomics panels are explicitly panel-overlap summaries, and cleavage was
+not run in this example. The public repository still contains a separate
+legacy ``sample_report.html`` demonstration; it is labeled as demo content and
+is not this validation result.
 
-.. figure:: ../_static/tutorial_report_preview.png
-   :alt: Static preview of the public CFTK demonstration HTML report
+.. figure:: ../_static/validation_10sample_report_preview.png
+   :alt: Sanitized static overview of a CFTK whole-workflow report for five controls and five sALS samples
    :width: 100%
 
-   Static public demonstration report preview. Interactive charts remain
-   interactive in ``report.html``; this PNG is included so the documentation
-   has a visible report output without requiring a browser.
+   Sanitized static overview of the observed ten-sample technical report.
+   Interactive charts remain interactive in ``report.html``; this PNG is a
+   public-safe visual index of the sections and outputs found in that report.
+   The aggregate evidence metadata is available as
+   :download:`JSON <../_static/validation_10sample_downstream_summary.json>`.
