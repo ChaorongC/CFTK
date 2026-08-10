@@ -1,3 +1,6 @@
 graft examples
+include scripts/__init__.py
+include scripts/validation/__init__.py
+include scripts/validation/check_distribution.py
 prune data
 global-exclude *.npy *.npz *.pkl

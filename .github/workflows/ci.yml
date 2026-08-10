@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Full tests (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,fragmentomics,web]" pytest
+
+      - name: Compile Python sources
+        run: python -m compileall -q src scripts/validation tests
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+  compatibility:
+    name: Core CLI smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install core package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Smoke-test installed CLI
+        run: |
+          cftk --version
+          cftk --help
+          cftk init --help
+          cftk doctor --help
+          cftk run --help
+          cftk plan --help
+          cftk analyze --help
+
+  distribution:
+    name: Distribution contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build
+
+      - name: Check metadata, content, and public-tree privacy
+        run: |
+          python -m twine check dist/*
+          python scripts/validation/check_distribution.py --source-tree . dist/*
+
+      - name: Install wheel in a fresh environment
+        run: |
+          python -m venv "$RUNNER_TEMP/cftk-wheel-smoke"
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/python" -m pip install dist/*.whl
+
+      - name: Smoke-test wheel CLI
+        run: |
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" --version
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" --help
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" init --help
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" doctor --help
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" run --help
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" plan --help
+          "$RUNNER_TEMP/cftk-wheel-smoke/bin/cftk" analyze --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cftk-distributions
+          path: dist/*
+          if-no-files-found: error
