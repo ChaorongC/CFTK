@@ -192,7 +192,9 @@ Commands
    DELFI inputs; it defaults to panel scope for Twist. Complete stages recorded
    by a compatible prior analysis manifest are validated and reused
    automatically, even when the current preset selects additional stages.
-   The ``differential`` preset also refreshes ``results/report/report.html``.
+   The ``differential`` and ``dmr`` presets also refresh
+   ``results/report/report.html``. DMR stage reuse additionally requires
+   matching SHA-256 signatures for the selected CpG bedGraphs.
    ``--modality NAME [NAME ...]`` overrides only the selected run and is stored
    in the plan, manifest, and reconstructed command. Differential stage reuse
    additionally requires matching SHA-256 signatures for all selected input
@@ -253,7 +255,11 @@ Commands
       cftk --config cftk_init.json diff --modality cpg occupancy wps
 
 ``dmr``
-   Run DMR analysis.
+   Advanced direct DMR compatibility command. It bypasses managed preflight,
+   input-sensitive resume, evidence, and immutable analysis-run provenance.
+   Prefer ``cftk analyze --preset dmr`` for new projects; it uses all samples
+   in the role-defined groups unless ``analysis.dmr.samples`` selects a
+   subset, records the selection, and refreshes the final report.
 
    .. code-block:: bash
 

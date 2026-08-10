@@ -79,7 +79,12 @@ also show the target identity and derived interval counts after execution. Use
 
 For the DMR preset, preflight verifies that ``Rscript`` can load the packages
 used by CFTK's bundled annotation script: ``annotatr``, ``GenomicRanges``,
-``org.Hs.eg.db``, and ``TxDb.Hsapiens.UCSC.hg38.knownGene``.
+``org.Hs.eg.db``, and ``TxDb.Hsapiens.UCSC.hg38.knownGene``. The managed DMR
+stage uses every sample in the two role-defined groups unless
+``analysis.dmr.samples`` explicitly selects a subset. It records the resolved
+sample names and SHA-256 signatures of the selected CpG bedGraphs, so changed
+inputs invalidate stale DMR outputs automatically. The DMR preset includes a
+final report refresh.
 
 .. code-block:: bash
 

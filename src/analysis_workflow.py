@@ -92,7 +92,7 @@ _STAGE_ALIASES = {
 _PRESETS = {
     "descriptive": _FRAGMENT_STAGES[:2] + ("analysis.report",),
     "differential": ("analysis.diff", "analysis.report"),
-    "dmr": ("analysis.dmr",),
+    "dmr": ("analysis.dmr", "analysis.report"),
     "fragmentomics": _FRAGMENT_STAGES,
     "mesa": ("analysis.mesa",),
     "comparative": ("analysis.diff", "analysis.dmr", "analysis.mesa", "analysis.report"),
@@ -338,6 +338,63 @@ def _effective_differential_modalities(cfg):
             cfg, "analysis", "diff", "params", "modalities", default=["cpg"]
         ) or ["cpg"]
     )
+
+
+def _dmr_sample_selection(cfg):
+    """Resolve the DMR sample subset in sample-sheet order."""
+    configured = _config_params(cfg, "analysis", "dmr", "samples", default={}) or {}
+    if not isinstance(configured, dict):
+        return {}, ["analysis.dmr.samples must be a group-to-sample-list mapping"]
+
+    selection = {}
+    errors = []
+    sample_groups = cfg.get("samples", {})
+    for group, entries in sample_groups.items():
+        available = [str(entry.get("name")) for entry in entries]
+        requested = configured.get(group)
+        if requested in (None, []):
+            selection[group] = available
+            continue
+        if not isinstance(requested, (list, tuple)):
+            errors.append(
+                f"analysis.dmr.samples[{group!r}] must be a list of sample names"
+            )
+            selection[group] = available
+            continue
+        requested = [str(name) for name in requested]
+        bad = [name for name in requested if name not in available]
+        if bad:
+            errors.append(
+                f"DMR sample(s) {bad} are not present in group {group!r}"
+            )
+        selected = set(requested) - set(bad)
+        selection[group] = [name for name in available if name in selected]
+
+    unknown_groups = sorted(set(configured) - set(sample_groups))
+    if unknown_groups:
+        errors.append(
+            f"analysis.dmr.samples contains unknown group(s): {unknown_groups}"
+        )
+    return selection, errors
+
+
+def _dmr_input_records(context):
+    """Return resolved DMR bedGraph inputs and sample-selection errors."""
+    selection, errors = _dmr_sample_selection(context["cfg"])
+    records = []
+    entries_by_group = context["cfg"].get("samples", {})
+    methylation = Path(context["paths"]["methylation"])
+    for group, entries in entries_by_group.items():
+        selected = set(selection.get(group, ()))
+        for entry in entries:
+            name = str(entry.get("name"))
+            if name in selected:
+                records.append({
+                    "group": group,
+                    "sample": name,
+                    "path": (methylation / f"{name}_CpG.bedGraph").resolve(),
+                })
+    return selection, errors, records
 
 
 def _validate_differential_override(context, stages):
@@ -593,8 +650,8 @@ def _stage_requirements(context, stage_id):
         requirements["references"].append(
             "R packages annotatr, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, and org.Hs.eg.db"
         )
-        for sample in context["samples"]:
-            requirements["inputs"].append(Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph")
+        _, _, records = _dmr_input_records(context)
+        requirements["inputs"].extend(record["path"] for record in records)
     elif stage_id in _FRAGMENT_STAGES:
         requirements["inputs"].extend(get_bam(sample, paths) for sample in context["samples"])
         scope = {"mode": "genome"}
@@ -765,10 +822,14 @@ def _required_inputs(context, stage_id, *, planned_outputs=()):
             path = Path(get_matrix_path(paths, modality))
             missing_or_empty(path, f"matrix for modality {modality!r}")
     elif kind == "dmr":
-        for sample in context["samples"]:
-            path = Path(paths["methylation"]) / f"{sample['name']}_CpG.bedGraph"
+        _, selection_errors, records = _dmr_input_records(context)
+        errors.extend(selection_errors)
+        for record in records:
+            path = record["path"]
             if not path.is_file() or path.stat().st_size == 0:
-                errors.append(f"CpG bedGraph for {sample['name']} is missing or empty: {path}")
+                errors.append(
+                    f"CpG bedGraph for {record['sample']} is missing or empty: {path}"
+                )
     elif kind == "mesa":
         modalities = _config_params(cfg, "analysis", "mesa", "params", "modalities", default=["cpg"]) or ["cpg"]
         for modality in modalities:
@@ -1005,6 +1066,10 @@ def build_plan(context, args, *, doctor_report=None):
             _effective_differential_modalities(context["cfg"])
             if "analysis.diff" in stages else []
         ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
+        ),
         "resource_plan": resources,
         "stages": records,
         "doctor": doctor_report,
@@ -1088,8 +1153,28 @@ def _load_previous(provenance, identity):
 
 def _stage_input_signatures(context, stage_id):
     """Return content signatures for inputs that govern safe stage reuse."""
-    if stage_id != "analysis.diff":
+    if stage_id not in {"analysis.diff", "analysis.dmr"}:
         return None
+    if stage_id == "analysis.dmr":
+        _, _, records = _dmr_input_records(context)
+        signatures = []
+        for record in records:
+            path = record["path"]
+            item = {
+                "group": record["group"],
+                "sample": record["sample"],
+                "path": str(path),
+            }
+            if path.is_file() and path.stat().st_size > 0:
+                item.update({
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256(path),
+                    "status": "available",
+                })
+            else:
+                item["status"] = "missing"
+            signatures.append(item)
+        return signatures
     signatures = []
     for modality in _effective_differential_modalities(context["cfg"]):
         path = Path(get_matrix_path(context["paths"], modality)).resolve()
@@ -1117,7 +1202,7 @@ def _input_signatures_match(stage, current):
         prior = by_path.get(record.get("path"))
         if not prior:
             return False
-        for key in ("modality", "status", "bytes", "sha256"):
+        for key in ("modality", "group", "sample", "status", "bytes", "sha256"):
             if prior.get(key) != record.get(key):
                 return False
     return True
@@ -1299,6 +1384,10 @@ def run(args):
             _effective_differential_modalities(context["cfg"])
             if "analysis.diff" in stages else []
         ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
+        ),
     }
     options = {
         **identity_options,
@@ -1334,6 +1423,10 @@ def run(args):
         "differential_modalities": (
             _effective_differential_modalities(context["cfg"])
             if "analysis.diff" in stages else []
+        ),
+        "dmr_sample_selection": (
+            _dmr_sample_selection(context["cfg"])[0]
+            if "analysis.dmr" in stages else {}
         ),
         "resource_plan": resources,
         "previous_run_id": previous.get("run_id") if previous else None,

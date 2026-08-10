@@ -147,7 +147,9 @@ introduce R/external-tool and modeling dependencies. Every attempt records a
 preflight report, stage contracts, command mirror, evidence, and HTML summary
 under `results/provenance/analysis-runs/<run-id>/`.
 
-The differential preset is cohort-level and refreshes the final report. Use
+The differential and DMR presets are cohort-level and refresh the final report.
+Managed DMR uses all role-defined samples by default, records selected CpG
+bedGraph signatures, and reruns when those inputs change. Use
 `--modality cpg occupancy wps` on `run --downstream differential`, `plan`, or
 `analyze` to override the configured differential modalities for one recorded
 run without editing JSON. CFTK creates known precursor matrices when selected,

@@ -354,6 +354,122 @@ def test_differential_preset_refreshes_attached_report(
     assert [stage["status"] for stage in second["stages"]] == ["resumed", "complete"]
 
 
+def test_dmr_selection_is_recorded_and_limits_required_inputs(modules, tmp_path):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    context["cfg"]["samples"] = {
+        "Control": [
+            {"name": "control_a"},
+            {"name": "control_b"},
+        ],
+        "Case": [{"name": "case_a"}],
+    }
+    context["cfg"]["group_roles"] = {"Control": "control", "Case": "case"}
+    context["cfg"]["comparison"] = "Control_vs_Case"
+    context["cfg"]["analysis"]["dmr"]["samples"] = {
+        "Control": ["control_b"],
+        "Case": ["case_a"],
+    }
+    context["samples"] = [
+        {"name": "control_a", "group": "Control"},
+        {"name": "control_b", "group": "Control"},
+        {"name": "case_a", "group": "Case"},
+    ]
+    methylation = Path(context["paths"]["methylation"])
+    methylation.mkdir(parents=True)
+    (methylation / "control_b_CpG.bedGraph").write_text("chr1\t0\t1\t50\n")
+    (methylation / "case_a_CpG.bedGraph").write_text("chr1\t0\t1\t60\n")
+
+    plan = analysis_workflow.build_plan(
+        context, _args(context, preset="dmr")
+    )
+    dmr = next(stage for stage in plan["stages"] if stage["id"] == "analysis.dmr")
+
+    assert analysis_workflow.resolve_stages("dmr", context["cfg"]) == (
+        "analysis.dmr", "analysis.report",
+    )
+    assert analysis_workflow.resolve_stages(
+        "auto", context["cfg"], explicit=["dmr"]
+    ) == ("analysis.dmr",)
+    assert plan["dmr_sample_selection"] == {
+        "Control": ["control_b"],
+        "Case": ["case_a"],
+    }
+    assert {Path(path).name for path in dmr["requirements"]["inputs"]} == {
+        "control_b_CpG.bedGraph", "case_a_CpG.bedGraph",
+    }
+    assert not analysis_workflow._required_inputs(context, "analysis.dmr")
+
+
+def test_dmr_resume_requires_matching_bedgraph_content_and_refreshes_report(
+    modules, tmp_path, monkeypatch
+):
+    analysis_workflow, _ = modules
+    context = _context(tmp_path)
+    context["cfg"]["samples"] = {
+        "Control": [{"name": "control"}],
+        "Case": [{"name": "case"}],
+    }
+    context["cfg"]["group_roles"] = {"Control": "control", "Case": "case"}
+    context["cfg"]["comparison"] = "Control_vs_Case"
+    context["cfg"]["analysis"]["dmr"]["samples"] = {
+        "Control": ["control"],
+        "Case": ["case"],
+    }
+    context["samples"] = [
+        {"name": "control", "group": "Control"},
+        {"name": "case", "group": "Case"},
+    ]
+    methylation = Path(context["paths"]["methylation"])
+    methylation.mkdir(parents=True)
+    (methylation / "control_CpG.bedGraph").write_text("chr1\t0\t1\t50\n")
+    case = methylation / "case_CpG.bedGraph"
+    case.write_text("chr1\t0\t1\t60\n")
+    outputs = {
+        "analysis.dmr": Path(context["paths"]["differential"]) / "dmr/result.bed",
+        "analysis.report": Path(context["paths"]["report"]) / "report.html",
+    }
+    monkeypatch.setattr(analysis_workflow, "_load_context", lambda args: context)
+    monkeypatch.setattr(
+        analysis_workflow,
+        "_artifact_specs",
+        lambda context, stage: [analysis_workflow._spec(outputs[stage], stage)],
+    )
+    import doctor
+    monkeypatch.setattr(doctor, "run_doctor", _doctor_pass)
+    calls = []
+
+    def execute(context, stage_id, args):
+        calls.append(stage_id)
+        outputs[stage_id].parent.mkdir(parents=True, exist_ok=True)
+        outputs[stage_id].write_text(f"{stage_id}\n")
+
+    monkeypatch.setattr(analysis_workflow, "_execute_stage", execute)
+    args = _args(context, preset="dmr")
+
+    first = analysis_workflow.run(args)
+    second = analysis_workflow.run(args)
+    case.write_text("chr1\t0\t1\t70\n")
+    third = analysis_workflow.run(args)
+
+    assert calls == [
+        "analysis.dmr", "analysis.report",
+        "analysis.report",
+        "analysis.dmr", "analysis.report",
+    ]
+    assert [stage["status"] for stage in second["stages"]] == [
+        "resumed", "complete",
+    ]
+    assert [stage["status"] for stage in third["stages"]] == [
+        "complete", "complete",
+    ]
+    assert first["stages"][0]["input_signatures"][0]["sha256"]
+    assert (
+        first["stages"][0]["input_signatures"][1]["sha256"]
+        != third["stages"][0]["input_signatures"][1]["sha256"]
+    )
+
+
 def test_adopted_outputs_resume_without_requiring_adoption_again(modules, tmp_path, monkeypatch):
     analysis_workflow, _ = modules
     context = _context(tmp_path)

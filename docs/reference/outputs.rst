@@ -64,7 +64,9 @@ CFTK writes results below ``<output_dir>/results``.
    * - ``3_differential/``
      - Differential result tables, PCA intermediates/figures, heatmaps,
        violin plots, and DMR outputs. Managed differential manifests also
-       record the selected modalities and SHA-256 input-matrix signatures.
+       record the selected modalities and SHA-256 input-matrix signatures;
+       managed DMR manifests record the selected samples and CpG bedGraph
+       signatures.
    * - ``4_fragmentomics/occupancy/``
      - Occupancy features and ``fragmentomics_scope.json`` when scoped.
    * - ``4_fragmentomics/wps/``

@@ -66,7 +66,8 @@ The major commands are:
 - ``qc``: run methylation, fragment length, or dinucleotide QC.
 - ``power``: run statistical power analysis.
 - ``diff``: run PCA, differential testing, and summary plots.
-- ``dmr``: run DMR preparation, metilene, annotation, and plotting.
+- ``dmr``: advanced direct DMR command; prefer ``analyze --preset dmr`` for
+  managed preflight, resume, and report integration.
 - ``frag``: run occupancy, WPS, DELFI, end motif, and cleavage workflows.
 - ``mesa``: run modality performance and multimodal MESA modeling.
 - ``merge``: build feature matrices from user-provided files.
@@ -144,6 +145,8 @@ and regions; the plan records this limitation. See
 :doc:`user_guide/downstream_workflow`.
 
 The managed differential preset is a cohort-level analysis and refreshes the
+final report. The managed DMR preset similarly records the selected CpG
+bedGraphs, resumes only when their content is unchanged, and refreshes the
 final report. Select a temporary, reproducibly recorded modality list with
 ``--modality cpg`` or ``--modality cpg occupancy wps``. CFTK automatically
 adds known matrix-producing stages, reuses unchanged matrices, and invalidates
