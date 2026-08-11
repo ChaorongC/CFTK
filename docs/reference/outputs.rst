@@ -15,9 +15,9 @@ CFTK writes results below ``<output_dir>/results``.
        including return codes and working directories.
    * - ``provenance/runs/<run-id>/``
      - Immutable beginner-run attempt directory containing stage state,
-       config/lock/options identity, doctor and tool reports, an immediate
-       command-ledger mirror, expected output/figure tables, events, and an
-       HTML summary.
+       config/lock/options identity, exact ``software_identity``, doctor and
+       tool reports, an immediate command-ledger mirror, expected
+       output/figure tables, events, and an HTML summary.
    * - ``provenance/runs/<run-id>/resource-plan.json``
      - Resolved total CPU budgets, parallel samples, per-sample threads,
        estimated peak threads, and detected scheduler allocation by stage.
@@ -34,9 +34,10 @@ CFTK writes results below ``<output_dir>/results``.
      - Read-only downstream dependency, input, role, resource, and output
        plan written by ``cftk plan``.
    * - ``provenance/analysis-runs/<run-id>/``
-     - Immutable downstream-analysis attempt containing the selected preset,
-       doctor preflight, artifact/figure contracts, command mirror, resource
-       plan, evidence bundle, and HTML summary.
+     - Immutable downstream-analysis attempt (schema-v2) containing the
+       selected preset, exact ``software_identity``, doctor preflight,
+       artifact/figure contracts, command mirror, resource plan, evidence
+       bundle, and HTML summary.
    * - ``provenance/job-plans/<plan-id>/``
      - Advanced per-sample task scripts, finalizer scripts, and ``job-plan.json``
        written by ``cftk plan --execution per-sample``. They are never

@@ -49,9 +49,10 @@ include-package-data = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["analysis*", "visualization*", "report*", "cftk_registry*"]
+include = ["analysis*", "visualization*", "report*", "cftk_registry*", "cftk_provenance*"]
 
 [tool.setuptools.package-data]
 analysis = ["*.r"]
 cftk_registry = ["registry.json"]
+cftk_provenance = ["build.json"]
 report = ["*.html", "*.json"]

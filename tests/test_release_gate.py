@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,6 +19,22 @@ IDENTITY = {
     "lock_sha256": "b" * 64,
     "options_sha256": "c" * 64,
 }
+
+
+def _software_identity():
+    value = {
+        "software_identity_schema_version": 1,
+        "name": "cftk",
+        "version": "1.0.0",
+        "revision": "d" * 40,
+        "source": "release",
+        "dirty": False,
+        "source_sha256": "e" * 64,
+    }
+    value["identity_sha256"] = hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return value
 
 
 def _write_json(path: Path, value) -> None:
@@ -102,18 +119,28 @@ def _write_attempt(
             "required_artifacts": len(artifacts),
             "missing_required_artifacts": 0,
         }
+    if schema >= 4:
+        manifest["software_identity"] = _software_identity()
 
     _write_json(run_dir / "run.json", manifest)
+    doctor_checks = [{
+        "id": "input.fixture",
+        "status": "PASS",
+        "summary": "private fixture is ready",
+        "details": {"path": str(root.resolve())},
+    }]
+    if schema >= 4:
+        doctor_checks.append({
+            "id": "runtime.cftk",
+            "status": "PASS",
+            "summary": "CFTK 1.0.0 (dddddddddddd, release)",
+            "details": {"software_identity": manifest["software_identity"]},
+        })
     _write_json(run_dir / "doctor-before.json", {
         "status": "PASS",
         "exit_code": 0,
-        "summary": {"pass": 1, "warn": 0, "fail": 0},
-        "checks": [{
-            "id": "input.fixture",
-            "status": "PASS",
-            "summary": "private fixture is ready",
-            "details": {"path": str(root.resolve())},
-        }],
+        "summary": {"pass": len(doctor_checks), "warn": 0, "fail": 0},
+        "checks": doctor_checks,
     })
     _write_json(run_dir / "tool-versions.json", {
         "fixture_tool": {
@@ -243,6 +270,45 @@ def test_release_gate_accepts_current_schema_integrated_evidence(tmp_path):
     assert report["clean_run"]["records"]["resource_plan_sidecar"] is True
     assert report["clean_run"]["integrated_evidence"]["status"] == "complete"
     assert report["resume_run"]["integrated_evidence"]["status"] == "complete"
+
+
+def test_release_gate_accepts_schema_v4_with_clean_revision_bound_identity(tmp_path):
+    clean, resume, _ = _make_pair(tmp_path, schema=4)
+
+    report = evaluate_release_gate(clean, resume)
+
+    assert report["status"] == "PASS"
+    assert report["clean_run"]["software_identity"]["revision"] == "d" * 40
+    assert report["comparison"]["same_software_identity"] is True
+
+
+@pytest.mark.parametrize("failure", ["dirty", "doctor_mismatch", "resume_mismatch"])
+def test_release_gate_rejects_schema_v4_software_identity_failures(tmp_path, failure):
+    clean, resume, _ = _make_pair(tmp_path, schema=4)
+    if failure == "dirty":
+        manifest = _load(clean)
+        manifest["software_identity"]["dirty"] = True
+        _rewrite(clean, manifest)
+    elif failure == "doctor_mismatch":
+        doctor = _load(clean.parent / "doctor-before.json")
+        doctor["checks"][1]["details"]["software_identity"]["identity_sha256"] = "f" * 64
+        _rewrite(clean.parent / "doctor-before.json", doctor)
+    else:
+        manifest = _load(resume)
+        manifest["software_identity"] = _software_identity()
+        manifest["software_identity"]["revision"] = "a" * 40
+        manifest["software_identity"]["identity_sha256"] = hashlib.sha256(
+            json.dumps(
+                {key: value for key, value in manifest["software_identity"].items()
+                 if key != "identity_sha256"},
+                sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        _rewrite(resume, manifest)
+
+    report = evaluate_release_gate(clean, resume)
+
+    assert report["status"] == "FAIL"
 
 
 @pytest.mark.parametrize("failure", ["failed", "unsupported", "malformed"])

@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from init import get_all_samples, get_bam, get_matrix_path, get_work_paths, load_config
 from resource_planning import detect_scheduler_allocation, plan_parallelism
 from util import configure_command_log, disp
+from cftk_provenance import get_software_identity
 from analysis.assay_scope import (
     ScopeError,
     describe_scope,
@@ -32,7 +33,7 @@ from analysis.assay_scope import (
 import run_workflow as _core
 
 
-ANALYSIS_RUN_SCHEMA_VERSION = 1
+ANALYSIS_RUN_SCHEMA_VERSION = 2
 PRESET_NAMES = (
     "auto",
     "descriptive",
@@ -1060,6 +1061,7 @@ def build_plan(context, args, *, doctor_report=None):
         "config": str(context["config_path"]),
         "lock": str(context["lock_path"]),
         "project_identity": context["identity"],
+        "software_identity": get_software_identity(),
         "roles": _role_info(context["cfg"]),
         "fragmentomics_scope": context.get("fragmentomics_scope"),
         "differential_modalities": (
@@ -1126,7 +1128,7 @@ def plan(args):
     return plan_payload
 
 
-def _load_previous(provenance, identity):
+def _load_previous(provenance, identity, software_identity):
     provenance = Path(provenance).resolve()
     candidates = []
     latest = provenance / "latest-analysis.json"
@@ -1146,7 +1148,10 @@ def _load_previous(provenance, identity):
             manifest = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, ValueError, json.JSONDecodeError):
             continue
-        if manifest.get("project_identity") == identity:
+        if (
+            manifest.get("project_identity") == identity
+            and manifest.get("software_identity") == software_identity
+        ):
             return manifest
     return None
 
@@ -1227,6 +1232,7 @@ def _expected_paths_covered(stage, specs):
 def _load_previous_stage(
     provenance,
     identity,
+    software_identity,
     stage_id,
     *,
     specs=None,
@@ -1258,7 +1264,10 @@ def _load_previous_stage(
             continue
         manifest_identity = dict(manifest.get("project_identity", {}))
         manifest_identity.pop("options_sha256", None)
-        if manifest_identity != current_identity:
+        if (
+            manifest_identity != current_identity
+            or manifest.get("software_identity") != software_identity
+        ):
             continue
         stage = next(
             (item for item in manifest.get("stages", []) if item.get("id") == stage_id),
@@ -1398,8 +1407,9 @@ def run(args):
         json.dumps(identity_options, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     context["identity"] = identity
+    software_identity = get_software_identity()
     provenance = Path(context["paths"]["provenance"]).resolve()
-    previous = _load_previous(provenance, identity)
+    previous = _load_previous(provenance, identity, software_identity)
     run_id = _new_id("analysis")
     run_dir = provenance / "analysis-runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -1417,6 +1427,7 @@ def run(args):
         "config": str(context["config_path"]),
         "lock": str(context["lock_path"]),
         "project_identity": identity,
+        "software_identity": software_identity,
         "options": options,
         "roles": _role_info(context["cfg"]),
         "fragmentomics_scope": context.get("fragmentomics_scope"),
@@ -1525,7 +1536,13 @@ def run(args):
             refresh_report = stage_id == "analysis.report" and len(stages) > 1
             if (
                 not refresh_report
-                and _core._can_resume(previous, identity, stage_id, specs)
+                and _core._can_resume(
+                    previous,
+                    identity,
+                    software_identity,
+                    stage_id,
+                    specs,
+                )
                 and previous_stage
                 and _input_signatures_match(previous_stage, input_signatures)
             ):
@@ -1544,6 +1561,7 @@ def run(args):
             compatible_stage = _load_previous_stage(
                 provenance,
                 identity,
+                software_identity,
                 stage_id,
                 specs=specs,
                 input_signatures=input_signatures,
@@ -1575,6 +1593,7 @@ def run(args):
             retryable = bool(
                 previous
                 and previous.get("project_identity") == identity
+                and previous.get("software_identity") == software_identity
                 and previous_stage
                 and previous_stage.get("status") in {
                     "running", "failed", "interrupted", "complete", "resumed", "adopted"

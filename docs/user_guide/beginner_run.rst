@@ -273,8 +273,11 @@ Failure, Resume, And Existing Outputs
 -------------------------------------
 
 Each new invocation creates a distinct attempt. Automatic resume occurs only
-when config, lock, run options, prior stage status, and all current artifacts
-match a recorded CFTK run. File existence alone is never adopted silently.
+when config, lock, run options, exact CFTK software identity, prior stage
+status, and all current artifacts match a recorded CFTK run. File existence
+alone is never adopted silently. The software identity is recorded in
+``run.json`` and includes the package version, revision/source, dirty state,
+and SHA-256 values; it contains no private checkout path.
 
 If a trusted stage was interrupted or one of its artifacts was damaged, CFTK
 moves its existing stage artifacts into:

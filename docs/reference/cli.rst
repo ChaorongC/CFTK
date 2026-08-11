@@ -85,7 +85,9 @@ Commands
    ``--adopt-existing`` is required to validate complete outputs that predate a
    run manifest. Partial untrusted outputs are preserved in a timestamped
    quarantine before retry. Automatic resume requires a matching config, lock,
-   options hash, trusted prior stage state, and currently valid artifacts.
+   options hash, exact CFTK software identity, trusted prior stage state, and
+   currently valid artifacts. A code or installed-build change therefore
+   reruns affected stages instead of silently reusing old results.
    ``--target-bed PATH`` is an expert one-run Picard target override.
    ``--parallel N`` sets concurrent samples. CFTK divides the configured total
    ``process.cores`` budget across those sample commands and records the result

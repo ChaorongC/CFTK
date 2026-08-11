@@ -293,8 +293,10 @@ def test_manifest_resume_requires_matching_identity_and_valid_artifacts(
     output = tmp_path / "done.tsv"
     output.write_text("done\n")
     identity = {"config_sha256": "a", "lock_sha256": "b"}
+    software = {"name": "cftk", "identity_sha256": "software-one"}
     previous = {
         "project_identity": identity,
+        "software_identity": software,
         "stages": [{"id": "process.1", "status": "complete"}],
     }
     specs = [{
@@ -302,12 +304,16 @@ def test_manifest_resume_requires_matching_identity_and_valid_artifacts(
         "nonempty": True, "description": "done",
     }]
 
-    assert run_workflow._can_resume(previous, identity, "process.1", specs)
+    assert run_workflow._can_resume(previous, identity, software, "process.1", specs)
     assert not run_workflow._can_resume(
-        previous, {**identity, "config_sha256": "changed"}, "process.1", specs
+        previous, {**identity, "config_sha256": "changed"}, software, "process.1", specs
+    )
+    assert not run_workflow._can_resume(
+        previous, identity, {**software, "identity_sha256": "software-two"},
+        "process.1", specs
     )
     output.unlink()
-    assert not run_workflow._can_resume(previous, identity, "process.1", specs)
+    assert not run_workflow._can_resume(previous, identity, software, "process.1", specs)
 
 
 def test_matching_manifest_is_found_when_latest_attempt_is_only_a_dry_run(
@@ -321,17 +327,22 @@ def test_matching_manifest_is_found_when_latest_attempt_is_only_a_dry_run(
     complete_path.parent.mkdir(parents=True)
     planned_path.parent.mkdir(parents=True)
     complete_path.write_text(json.dumps({
-        "run_id": "complete", "project_identity": identity, "status": "complete",
+        "run_id": "complete", "project_identity": identity,
+        "software_identity": {"identity_sha256": "software-one"},
+        "status": "complete",
     }))
     planned_path.write_text(json.dumps({
         "run_id": "planned", "project_identity": {**identity, "options_sha256": "dry"},
+        "software_identity": {"identity_sha256": "software-one"},
         "status": "planned",
     }))
     (provenance / "latest-run.json").write_text(json.dumps({
         "manifest": str(planned_path),
     }))
 
-    assert run_workflow._load_previous(provenance, identity)["run_id"] == "complete"
+    assert run_workflow._load_previous(
+        provenance, identity, {"identity_sha256": "software-one"}
+    )["run_id"] == "complete"
 
 
 def test_quarantine_preserves_relative_paths(modules, tmp_path):

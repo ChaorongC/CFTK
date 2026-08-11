@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -18,6 +20,8 @@ REQUIRED_PATHS = {
     "cftk.py",
     "cftk_registry/__init__.py",
     "cftk_registry/registry.json",
+    "cftk_provenance/__init__.py",
+    "cftk_provenance/build.json",
     "doctor.py",
     "init.py",
     "job_plan.py",
@@ -68,6 +72,53 @@ DATA_URI_PATTERN = re.compile(
 
 class ValidationError(RuntimeError):
     """Raised when a release artifact violates the public package contract."""
+
+
+def _identity_digest(identity: dict) -> str:
+    payload = json.dumps(
+        {key: value for key, value in identity.items() if key != "identity_sha256"},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _read_release_identity(path: Path, members: dict[str, bytes]) -> dict:
+    member_name = (
+        "cftk_provenance/build.json"
+        if path.suffix == ".whl"
+        else "src/cftk_provenance/build.json"
+    )
+    try:
+        identity = json.loads(members[member_name].decode("utf-8"))
+    except KeyError as exc:
+        raise ValidationError(f"{path.name}: release build identity is missing") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValidationError(f"{path.name}: release build identity is malformed") from exc
+    required = {
+        "software_identity_schema_version", "name", "version", "revision",
+        "source", "dirty", "source_sha256", "identity_sha256",
+    }
+    if not isinstance(identity, dict) or set(identity) != required:
+        raise ValidationError(f"{path.name}: release build identity fields are invalid")
+    if identity["software_identity_schema_version"] != 1 or identity["name"] != "cftk":
+        raise ValidationError(f"{path.name}: release build identity metadata is invalid")
+    if not isinstance(identity["version"], str) or not identity["version"]:
+        raise ValidationError(f"{path.name}: release build identity version is invalid")
+    if (
+        not isinstance(identity["revision"], str)
+        or not re.fullmatch(r"[0-9a-f]{40}", identity["revision"])
+        or identity["source"] != "release"
+        or identity["dirty"] is not False
+    ):
+        raise ValidationError(f"{path.name}: release build identity is not clean and revision-bound")
+    if (
+        not isinstance(identity["source_sha256"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", identity["source_sha256"])
+        or identity["identity_sha256"] != _identity_digest(identity)
+    ):
+        raise ValidationError(f"{path.name}: release build identity digest is invalid")
+    return identity
 
 
 def _archive_members(path: Path) -> dict[str, bytes]:
@@ -190,6 +241,35 @@ def validate_archive(path: Path) -> None:
         raise ValidationError(f"{path.name}: " + "; ".join(problems))
 
 
+def release_identity(path: Path) -> dict:
+    """Validate and return the prepared identity embedded in one archive."""
+    path = Path(path)
+    members = _normalise_members(path, _archive_members(path))
+    return _read_release_identity(path, members)
+
+
+def validate_release_archives(
+    archives: list[Path], *, version: str | None = None,
+    revision: str | None = None, source_sha256: str | None = None,
+) -> dict:
+    """Require matching clean identities in all release wheel/sdist archives."""
+    if not archives:
+        raise ValidationError("no release archives were provided")
+    identities = [release_identity(path) for path in archives]
+    if any(value != identities[0] for value in identities[1:]):
+        raise ValidationError("release archives contain different build identities")
+    identity = identities[0]
+    expected = {
+        "version": version,
+        "revision": revision,
+        "source_sha256": source_sha256,
+    }
+    for key, value in expected.items():
+        if value is not None and identity[key] != value:
+            raise ValidationError(f"release identity {key} does not match the expected value")
+    return identity
+
+
 def tracked_text_files(root: Path) -> dict[str, bytes]:
     """Read Git-tracked files; undecodable binary files are ignored by the scan."""
     result = subprocess.run(
@@ -226,6 +306,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Also scan Git-tracked files below this repository root",
     )
+    parser.add_argument("--release-version")
+    parser.add_argument("--release-revision")
+    parser.add_argument("--release-source-sha256")
     return parser
 
 
@@ -237,6 +320,17 @@ def main() -> int:
         for archive in args.archives:
             validate_archive(archive)
             print(f"validated distribution: {archive}")
+        if any(
+            value is not None
+            for value in (args.release_version, args.release_revision, args.release_source_sha256)
+        ):
+            identity = validate_release_archives(
+                [Path(archive) for archive in args.archives],
+                version=args.release_version,
+                revision=args.release_revision,
+                source_sha256=args.release_source_sha256,
+            )
+            print(f"validated release identity: {identity['version']} ({identity['revision']})")
         if args.source_tree is not None:
             validate_source_tree(args.source_tree)
             print(f"validated tracked-source privacy: {args.source_tree}")
