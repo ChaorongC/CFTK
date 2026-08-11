@@ -230,3 +230,81 @@ does not copy BAMs, source tables, the private report, sample identifiers, or
 absolute paths. The generated figures are documentation evidence only; they
 must retain the explicit technical-example and targeted-panel limitations used
 on the public user-guide pages.
+
+Step 6: Run The Lab Release Gate
+--------------------------------
+
+This final check is for CFTK maintainers, not ordinary package users. It proves
+that one core Twist workflow attempt executed every applicable stage, that the
+recorded commands and required artifacts are complete, and that immediately
+repeating the unchanged workflow reused those artifacts without executing a
+command. It does not add a biological, numerical, or cross-tool threshold.
+
+Use a dedicated private validation project. The accepted clean attempt must
+record ``complete`` for every applicable stage; ``adopted`` or ``resumed`` is
+not a substitute for clean execution. Do not use ``--adopt-existing`` for that
+attempt. Capture the immutable manifest path before running the same command a
+second time:
+
+.. code-block:: bash
+
+   export PRIVATE_VALIDATION=/path/to/private/cftk_release_validation
+
+   cftk --config "$PRIVATE_VALIDATION/cftk_init.json" run
+   clean_run=$(jq -r '.manifest' \
+       "$PRIVATE_VALIDATION/results/provenance/latest-run.json")
+
+   # Do not edit the config, inputs, references, outputs, or run options.
+   cftk --config "$PRIVATE_VALIDATION/cftk_init.json" run
+   resume_run=$(jq -r '.manifest' \
+       "$PRIVATE_VALIDATION/results/provenance/latest-run.json")
+
+   python scripts/validation/check_release_gate.py \
+       --clean-run "$clean_run" \
+       --resume-run "$resume_run" \
+       --output-dir "$PRIVATE_VALIDATION/release-gate"
+
+The command exits ``0`` only when both manifests are complete, project and
+artifact identities agree, the second attempt points directly to the clean
+attempt, all clean stages are ``complete``, all resume stages are ``resumed``,
+every clean command has one zero-exit finish, the resume command ledger is
+empty, doctor has no failures, and every required artifact still satisfies its
+recorded nonempty contract. Artifact tables, event ledgers, tool-version
+records, and schema-version evidence are checked as well.
+
+The gate writes two deterministic records:
+
+.. code-block:: text
+
+   release-gate/
+   |-- release_acceptance.json
+   `-- release_acceptance.txt
+
+These records contain run IDs, project-identity hashes, core stage IDs and
+statuses, contract hashes, and aggregate counts. They intentionally omit input
+paths, commands, sample-derived filenames, sample identifiers, and patient-level
+values. Keep them in the private validation workspace and review them before
+sharing; never commit the private project, scheduler logs, or raw gate inputs.
+
+CFTK core run schemas 1 through 3 are supported. Schema 3 requires its
+integrated evidence bundle. Earlier complete manifests predate that bundle, so
+the gate validates their stable run-level records and artifact contracts
+directly and reports integrated evidence as not required.
+
+Scheduler use is optional and external to the gate. The same procedure is
+valid in a local process or an approved institutional allocation. If Slurm is
+used, submission and monitoring are advanced maintainer tasks: use the lab or
+institutional account, preserve the scheduler logs privately, and do not add
+account names or cluster-specific paths to this repository.
+
+Preserved Two-Sample Result
+---------------------------
+
+The preserved two-sample Twist technical pair passes this gate. The clean
+attempt completed all seven applicable stages with 24 paired zero-exit
+commands, 26 passing doctor checks, 11 passing tool probes, and all 72 required
+artifacts present (56 output/report rows and 16 figure rows). Its immediate
+successor resumed all seven stages with an empty command ledger and the same
+project, tool, stage, and artifact identities. This is execution and
+reproducibility evidence for a bounded technical example, not biological or
+clinical validation.
