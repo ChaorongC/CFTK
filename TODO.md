@@ -111,8 +111,8 @@ Reporting integration:
 
 ## 4. Real-Data End-To-End Validation
 
-**Status:** In progress; clean structural end-to-end validation is complete,
-but biological equivalence and production acceptance remain open.
+**Status:** Core technical release acceptance is complete; biological
+equivalence and clinical/biomarker validation remain open.
 
 Completed validation used one control and one sALS sample, each deterministically
 subsampled to five million paired reads. The managed Twist/hg38 workflow ran
@@ -145,26 +145,42 @@ validated, and all 95 run-summary links resolved. A second `cftk run` resumed
 all seven stages and executed zero external commands. The resulting matrix has
 420,435 CpGs and two sample columns.
 
-Implementation:
+The maintainer release gate now verifies the preserved clean attempt and its
+immediate resume directly from their immutable manifests. The accepted pair
+has seven clean then seven resumed stages, 24 paired zero-exit clean commands,
+an empty resume command ledger, 26 passing doctor checks, 11 passing tool
+probes, and 72 valid required artifacts. Machine-readable and text evidence is
+written only to the private validation workspace and omits commands, paths,
+sample-derived filenames, sample identifiers, and patient-level values. This
+gate adds no biological or numerical acceptance threshold.
 
-- Preserve the approved smoke inputs, managed reference profile, tool versions,
+Completed implementation:
+
+- [x] Preserve the approved smoke inputs, managed reference profile, tool versions,
   checksums, external validation recipe, and generated reports outside Git.
-- Repeat the complete workflow from a clean project so the command ledger also
+- [x] Repeat the complete workflow from a clean project so the command ledger
   includes stages that were reused from checkpoints during the successful retry.
-- Compare commands and key outputs with the Twist technical note, including
+- [x] Compare commands and key outputs with the Twist technical note, including
   read groups, mapping filters, target metrics, `--mergeContext`, minimum depth,
   and OT/OB handling.
-- Keep the default workflow on Sambamba; retain Picard as an explicit advanced
+- [x] Keep the default workflow on Sambamba; retain Picard as an explicit advanced
   `process.duplicate_marking_tool` option and keep any comparison internal.
-- Record runtime, memory, artifact checksums, expected ranges, and any accepted
-  version-specific differences.
+- [x] Add a repeatable maintainer gate for exact command completion, artifact
+  contracts, doctor/tool records, project identity, and zero-command resume.
+
+Remaining biological validation:
+
+- Record runtime, memory, artifact identities, tool-native diagnostic values,
+  and any accepted version-specific differences for future release candidates.
+- Define biological acceptance only for a separately designed, adequately
+  powered validation study; do not expose a technical cutoff to beginner users.
 
 Completion criteria:
 
 - Every external command exits successfully and produces its expected,
   nonempty artifacts.
-- Target coverage, alignment, duplicate, methylation, and QC outputs pass
-  predefined scientific and structural checks.
+- Target coverage, alignment, duplicate, methylation, and QC outputs satisfy
+  their existing structural contracts and preserve tool-default diagnostics.
 - The complete validation recipe and provenance are reproducible in a clean
   environment before a production release is tagged.
 

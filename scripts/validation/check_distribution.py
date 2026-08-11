@@ -37,6 +37,7 @@ SDIST_REQUIRED_PATHS = {
     "scripts/__init__.py",
     "scripts/validation/__init__.py",
     "scripts/validation/check_distribution.py",
+    "scripts/validation/check_release_gate.py",
 }
 
 FORBIDDEN_SUFFIXES = {
