@@ -29,6 +29,7 @@ from resource_planning import (
     ensure_scheduler_capacity,
     plan_parallelism,
 )
+from cftk_provenance import format_software_identity, get_software_identity
 
 
 _STEP_KEYS = {
@@ -114,10 +115,20 @@ def _check_runtime(checks):
     else:
         checks.pass_("runtime.python", f"Python {version}")
     try:
-        version = importlib.metadata.version("cftk")
-        checks.pass_("runtime.cftk", f"CFTK {version}")
-    except importlib.metadata.PackageNotFoundError:
-        checks.pass_("runtime.cftk", "CFTK source checkout is importable")
+        identity = get_software_identity()
+        checks.pass_(
+            "runtime.cftk",
+            format_software_identity(identity),
+            details={
+                "software_identity": identity,
+            },
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        checks.fail(
+            "runtime.cftk",
+            f"CFTK software identity is invalid: {exc}",
+            remedy="Reinstall CFTK from a verified source or release artifact.",
+        )
 
 
 def _tool_requirements(cfg, steps, skip_picard_metrics):

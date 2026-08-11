@@ -1,0 +1,80 @@
+name: Tagged release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish GitHub artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install release build tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Prepare and verify release identity
+        id: identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REVISION: ${{ github.sha }}
+        run: |
+          python scripts/release/prepare_build.py \
+            --revision "$RELEASE_REVISION" \
+            --tag "$RELEASE_TAG" \
+            --output src/cftk_provenance/build.json \
+            > "$RUNNER_TEMP/cftk-release-identity.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          identity = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "cftk-release-identity.json").read_text()
+          )
+          print(f"version={identity['version']}")
+          print(f"revision={identity['revision']}")
+          print(f"source_sha256={identity['source_sha256']}")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              for key in ("version", "revision", "source_sha256"):
+                  handle.write(f"{key}={identity[key]}\n")
+          PY
+
+      - name: Build wheel and source distribution
+        run: python -m build --outdir dist
+
+      - name: Validate archives and public source privacy
+        run: |
+          python scripts/validation/check_distribution.py \
+            --source-tree . \
+            --release-version "${{ steps.identity.outputs.version }}" \
+            --release-revision "${{ steps.identity.outputs.revision }}" \
+            --release-source-sha256 "${{ steps.identity.outputs.source_sha256 }}" \
+            dist/*.whl dist/*.tar.gz
+
+      - name: Generate checksums
+        run: sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --title "CFTK ${{ steps.identity.outputs.version }}" \
+            --generate-notes \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS

@@ -15,10 +15,11 @@ from types import SimpleNamespace
 
 from init import get_all_samples, get_sequence_dictionary_path, get_work_paths, load_config
 from resource_planning import detect_scheduler_allocation, plan_parallelism
+from cftk_provenance import format_software_identity, get_software_identity
 from util import configure_command_log, disp
 
 
-RUN_SCHEMA_VERSION = 3
+RUN_SCHEMA_VERSION = 4
 DEFAULT_TOOLS = {
     "step1_trimming": "trim_galore",
     "step2_alignment": "bwameth",
@@ -384,8 +385,12 @@ def _validate_artifacts(specs):
     return errors
 
 
-def _can_resume(previous, identity, stage_id, specs):
-    if not previous or previous.get("project_identity") != identity:
+def _can_resume(previous, identity, software_identity, stage_id, specs):
+    if (
+        not previous
+        or previous.get("project_identity") != identity
+        or previous.get("software_identity") != software_identity
+    ):
         return False
     stage = next((item for item in previous.get("stages", []) if item.get("id") == stage_id), None)
     return bool(
@@ -730,6 +735,19 @@ def _write_summary_html(manifest, path, project_root=None):
             f"<strong>Status:</strong> {html.escape(str(downstream.get('status', 'unknown')))}</p>"
             f"<ul>{''.join(links)}</ul>"
         )
+    software = manifest.get("software_identity")
+    software_block = ""
+    if isinstance(software, dict):
+        try:
+            software_label = format_software_identity(software)
+        except (TypeError, ValueError, RuntimeError):
+            software_label = "invalid software identity"
+        software_block = (
+            "<h2>Software identity</h2>"
+            f"<p><code>{html.escape(software_label)}</code><br>"
+            f"Source SHA-256: <code>{html.escape(str(software.get('source_sha256', '')))}</code><br>"
+            f"Identity SHA-256: <code>{html.escape(str(software.get('identity_sha256', '')))}</code></p>"
+        )
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CFTK run {html.escape(manifest['run_id'])}</title>
@@ -748,6 +766,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
 <strong>Status:</strong> {html.escape(manifest.get('status', 'unknown'))}<br>
 <strong>Started:</strong> {html.escape(manifest.get('started_at', ''))}<br>
 <strong>Finished:</strong> {html.escape(manifest.get('finished_at') or 'in progress')}</p>
+{software_block}
 {error_block}
 {scope_block}
 {downstream_block}
@@ -760,7 +779,7 @@ figcaption{{font-size:14px;margin-top:6px;color:#4b5563}}
     _atomic_write_text(path, document)
 
 
-def _load_previous(provenance, identity=None):
+def _load_previous(provenance, identity=None, software_identity=None):
     provenance = Path(provenance).resolve()
     latest = Path(provenance) / "latest-run.json"
     candidates = []
@@ -782,7 +801,12 @@ def _load_previous(provenance, identity=None):
             manifest = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, ValueError, json.JSONDecodeError):
             continue
-        if identity is None or manifest.get("project_identity") == identity:
+        identity_matches = identity is None or manifest.get("project_identity") == identity
+        software_matches = (
+            software_identity is None
+            or manifest.get("software_identity") == software_identity
+        )
+        if identity_matches and software_matches:
             return manifest
     return None
 
@@ -875,8 +899,9 @@ def run(args):
         json.dumps(options, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     context["identity"] = identity
+    software_identity = get_software_identity()
     provenance = Path(context["paths"]["provenance"]).resolve()
-    previous = _load_previous(provenance, identity)
+    previous = _load_previous(provenance, identity, software_identity)
     run_id = _new_run_id()
     run_dir = provenance / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -894,6 +919,7 @@ def run(args):
         "config": str(context["config_path"]),
         "lock": str(context["lock_path"]),
         "project_identity": identity,
+        "software_identity": software_identity,
         "options": options,
         "resource_plan": {"status": "NOT_PLANNED"},
         "previous_run_id": previous.get("run_id") if previous else None,
@@ -982,7 +1008,13 @@ def run(args):
                 _append_event(events_path, "stage_skipped", stage=stage_record["id"], reason="input_type")
                 continue
             specs = stage_record["expected"]
-            if _can_resume(previous, identity, stage_record["id"], specs):
+            if _can_resume(
+                previous,
+                identity,
+                software_identity,
+                stage_record["id"],
+                specs,
+            ):
                 stage_record["status"] = "resumed"
                 stage_record["finished_at"] = _utc_now()
                 _record_artifacts(stage_record, specs)

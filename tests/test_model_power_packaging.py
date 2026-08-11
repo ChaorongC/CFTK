@@ -10,9 +10,10 @@ def test_package_includes_model_power_code_but_not_reference_data():
 
     assert (
         'include = ["analysis*", "visualization*", "report*", '
-        '"cftk_registry*"]'
+        '"cftk_registry*", "cftk_provenance*"]'
     ) in pyproject
     assert 'cftk_registry = ["registry.json"]' in pyproject
+    assert 'cftk_provenance = ["build.json"]' in pyproject
     assert 'analysis = ["*.r"]' in pyproject
     assert 'report = ["*.html", "*.json"]' in pyproject
     assert 'license = { text = "MIT" }' in pyproject
@@ -21,6 +22,7 @@ def test_package_includes_model_power_code_but_not_reference_data():
     assert "global-exclude *.npy *.npz *.pkl" in manifest
     assert (ROOT / "src" / "analysis" / "model_power.py").is_file()
     assert (ROOT / "src" / "cftk_registry" / "registry.json").is_file()
+    assert (ROOT / "src" / "cftk_provenance" / "build.json").is_file()
     assert (ROOT / "src" / "analysis" / "dmr_annotation.r").is_file()
     assert (ROOT / "src" / "report" / "report_template.html").is_file()
     assert (ROOT / "src" / "report" / "software_list.json").is_file()

@@ -286,10 +286,20 @@ paths, commands, sample-derived filenames, sample identifiers, and patient-level
 values. Keep them in the private validation workspace and review them before
 sharing; never commit the private project, scheduler logs, or raw gate inputs.
 
-CFTK core run schemas 1 through 3 are supported. Schema 3 requires its
-integrated evidence bundle. Earlier complete manifests predate that bundle, so
-the gate validates their stable run-level records and artifact contracts
-directly and reports integrated evidence as not required.
+CFTK core run schemas 1 through 4 are supported. Schema 3 requires its
+integrated evidence bundle. Schema 4 additionally requires a clean,
+revision-bound ``software_identity`` in both manifests and the same identity in
+each ``runtime.cftk`` doctor check. This prevents automatic reuse of artifacts
+after the CFTK payload changes. Earlier complete manifests predate software
+identity, so schemas 1--3 remain readable and are validated using their stable
+run-level records and artifact contracts.
+
+The software identity contains only the package version, Git revision/source,
+dirty state, and SHA-256 values. It contains no checkout path, sample name,
+command, or scheduler account. The downstream workflow records the same
+identity in its schema-v2 plan and manifest. A different identity causes the
+stage to execute again; a valid unchanged precursor is still discovered and
+reused automatically.
 
 Scheduler use is optional and external to the gate. The same procedure is
 valid in a local process or an approved institutional allocation. If Slurm is

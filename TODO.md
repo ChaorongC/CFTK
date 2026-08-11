@@ -231,7 +231,32 @@ implementation:
   whole-genome use requires an explicit validated override. Biological
   performance validation of these panel-restricted features remains open.
 
-## 6. Conda Distribution
+## 6. Software Identity And Tagged Release
+
+**Status:** IN PROGRESS; implementation is complete locally, but no tag or
+GitHub release is created until the release gates pass.
+
+- [x] Keep the explicit package version in ``pyproject.toml`` and require
+  release tags to match it exactly as ``v<version>``.
+- [x] Embed a privacy-safe package/revision/source/payload identity in release
+  artifacts and expose it through doctor and workflow manifests.
+- [x] Advance core provenance to schema-v4 and downstream provenance to
+  schema-v2 while preserving historical schema readability.
+- [x] Invalidate automatic resume when project or software identity changes.
+- [x] Add archive identity, content, and public-tree privacy checks plus a
+  tag-triggered GitHub-only wheel/sdist/checksum release workflow.
+- [ ] Run the full release-candidate validation and create the first immutable
+  tag only after maintainer review of the generated evidence.
+
+Completion criteria:
+
+- A clean, revision-bound schema-v4 run and zero-command resume pass the
+  maintainer gate with matching doctor identity.
+- Wheel and sdist contain the same prepared identity and no excluded data or
+  private content.
+- The GitHub release contains only the wheel, sdist, and checksum asset.
+
+## 7. Conda Distribution
 
 **Status:** TODO; the current two-step source installation is accepted and
 documented, while native Conda/Bioconda distribution remains future work.

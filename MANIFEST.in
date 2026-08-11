@@ -3,5 +3,8 @@ include scripts/__init__.py
 include scripts/validation/__init__.py
 include scripts/validation/check_distribution.py
 include scripts/validation/check_release_gate.py
+include scripts/release/__init__.py
+include scripts/release/prepare_build.py
+include src/cftk_provenance/build.json
 prune data
 global-exclude *.npy *.npz *.pkl

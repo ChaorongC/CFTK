@@ -507,6 +507,7 @@ def test_compatible_stage_is_reused_across_different_stage_selection(
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(json.dumps({
         "run_id": "prior-run",
+        "software_identity": {"identity_sha256": "software-one"},
         "project_identity": {
             "config_sha256": "config",
             "lock_sha256": "lock",
@@ -516,10 +517,15 @@ def test_compatible_stage_is_reused_across_different_stage_selection(
     }))
 
     reused = analysis_workflow._load_previous_stage(
-        tmp_path / "results/provenance", identity, "fragmentomics.delfi"
+        tmp_path / "results/provenance", identity,
+        {"identity_sha256": "software-one"}, "fragmentomics.delfi"
     )
 
     assert reused["run_id"] == "prior-run"
+    assert analysis_workflow._load_previous_stage(
+        tmp_path / "results/provenance", identity,
+        {"identity_sha256": "software-two"}, "fragmentomics.delfi"
+    ) is None
 
 
 def test_incomplete_stage_does_not_quarantine_shared_artifacts(

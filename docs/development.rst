@@ -9,12 +9,18 @@ Planned Release Work
 
 The repository ``TODO.md`` is the authoritative roadmap. Managed references,
 ``cftk doctor``, and the fail-fast beginner ``cftk run`` are implemented. The
-remaining release gates are:
+current release work is the software-identity and tagged-artifact gate:
 
-- end-to-end validation with approved Twist data and the real external
-  bioinformatics toolchain before a production release is tagged; and
-- internal validation artifacts for the default Sambamba duplicate-marking
-  implementation. These comparisons are not beginner workflow gates.
+- core schema-v4 and downstream schema-v2 manifests bind results and automatic
+  resume to the exact CFTK payload identity; and
+- a ``v<pyproject version>`` tag builds and validates a wheel, sdist, and
+  SHA-256 checksum file before publishing GitHub release assets only.
+
+The release workflow does not publish to PyPI or Conda/Bioconda. A clean,
+revision-bound identity is required for a new release gate; historical core
+schemas 1--3 remain readable and acceptable for their recorded validation.
+Conda/Bioconda packaging is the next distribution phase after the first
+immutable GitHub release.
 
 The pinned managed default profile, local reference profiles, schema-v2 project
 initialization, doctor diagnostics, and manifest-backed beginner workflow are

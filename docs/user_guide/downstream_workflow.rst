@@ -208,9 +208,12 @@ the user to submit under their own lab account; CFTK does not submit jobs.
 Resume And Method Boundaries
 ----------------------------
 
-Successful stages resume when the configuration, lock, and required artifacts
-agree. A complete stage recorded by any compatible prior analysis selection is
-validated and reused automatically when a later full suite includes it.
+Successful stages resume when the configuration, lock, exact CFTK software
+identity, and required artifacts agree. A complete stage recorded by any
+compatible prior analysis selection is validated and reused automatically when
+a later full suite includes it. Historical manifests remain readable, but
+their missing software identity makes them ineligible for automatic reuse;
+use an explicit adoption decision when appropriate.
 Existing untracked outputs with no trusted stage manifest still require
 ``--adopt-existing``; partial retry outputs are quarantined under
 ``results/provenance/quarantine/``.

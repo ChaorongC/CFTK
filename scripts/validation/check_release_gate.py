@@ -20,7 +20,19 @@ import uuid
 
 
 GATE_SCHEMA_VERSION = 1
-SUPPORTED_RUN_SCHEMA_VERSIONS = (1, 2, 3)
+SUPPORTED_RUN_SCHEMA_VERSIONS = (1, 2, 3, 4)
+SOFTWARE_IDENTITY_SCHEMA_VERSION = 1
+SOFTWARE_IDENTITY_KEYS = {
+    "software_identity_schema_version",
+    "name",
+    "version",
+    "revision",
+    "source",
+    "dirty",
+    "source_sha256",
+    "identity_sha256",
+}
+SOFTWARE_REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_IDENTITY_KEYS = (
     "config_sha256",
     "lock_sha256",
@@ -100,6 +112,42 @@ def _contract_sha256(artifacts: list[dict]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _identity_sha256(identity: dict) -> str:
+    payload = json.dumps(
+        {key: value for key, value in identity.items() if key != "identity_sha256"},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _validate_software_identity(identity: dict, *, require_clean_revision: bool) -> dict:
+    if not isinstance(identity, dict) or set(identity) != SOFTWARE_IDENTITY_KEYS:
+        raise GateValidationError("software identity fields are incomplete")
+    if identity["software_identity_schema_version"] != SOFTWARE_IDENTITY_SCHEMA_VERSION:
+        raise GateValidationError("software identity schema is unsupported")
+    if identity["name"] != "cftk":
+        raise GateValidationError("software identity package name is invalid")
+    if not isinstance(identity["version"], str) or not identity["version"]:
+        raise GateValidationError("software identity version is invalid")
+    revision = identity["revision"]
+    if not isinstance(revision, str) or not SOFTWARE_REVISION_PATTERN.fullmatch(revision):
+        raise GateValidationError("software identity is not revision-bound")
+    if identity["source"] not in {"git", "release", "installed", "source-tree"}:
+        raise GateValidationError("software identity source is invalid")
+    if identity["dirty"] is not False:
+        if require_clean_revision:
+            raise GateValidationError("software identity is dirty")
+        raise GateValidationError("software identity dirty state is invalid")
+    if not isinstance(identity["source_sha256"], str) or not SHA256_PATTERN.fullmatch(
+        identity["source_sha256"]
+    ):
+        raise GateValidationError("software source SHA-256 is invalid")
+    if identity["identity_sha256"] != _identity_sha256(identity):
+        raise GateValidationError("software identity digest is inconsistent")
+    return dict(identity)
+
+
 def _read_json_object(path: Path, record_name: str) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -168,6 +216,11 @@ def _load_manifest(manifest_path: Path) -> tuple[dict, Path]:
         raise GateValidationError("run manifest has a non-SHA-256 project identity")
     if not isinstance(manifest.get("stages"), list) or not manifest["stages"]:
         raise GateValidationError("run manifest has no stage records")
+    software_identity = manifest.get("software_identity")
+    if schema >= 4:
+        _validate_software_identity(software_identity, require_clean_revision=True)
+    elif software_identity is not None:
+        _validate_software_identity(software_identity, require_clean_revision=False)
     return manifest, run_dir
 
 
@@ -359,7 +412,7 @@ def _validate_artifact_tables(run_dir: Path, artifacts: list[dict]) -> dict:
     return {"output_rows": len(outputs), "figure_rows": len(figures)}
 
 
-def _validate_doctor(run_dir: Path) -> tuple[dict, dict]:
+def _validate_doctor(run_dir: Path, manifest: dict) -> tuple[dict, dict]:
     doctor = _read_json_object(run_dir / "doctor-before.json", "doctor report")
     checks = doctor.get("checks")
     summary = doctor.get("summary")
@@ -380,6 +433,15 @@ def _validate_doctor(run_dir: Path) -> tuple[dict, dict]:
     expected_status = "FAIL" if counts["fail"] else ("WARN" if counts["warn"] else "PASS")
     if doctor.get("exit_code") != 0 or counts["fail"] != 0 or doctor.get("status") != expected_status:
         raise GateValidationError("doctor report contains a required failure")
+    if manifest["run_schema_version"] >= 4:
+        runtime_checks = [check for check in checks if check.get("id") == "runtime.cftk"]
+        if len(runtime_checks) != 1:
+            raise GateValidationError("schema-v4 doctor report lacks runtime.cftk identity")
+        details = runtime_checks[0].get("details")
+        if not isinstance(details, dict) or details.get("software_identity") != manifest.get(
+            "software_identity"
+        ):
+            raise GateValidationError("doctor software identity does not match the manifest")
     public = {"status": doctor["status"], "exit_code": 0, **counts}
     return doctor, public
 
@@ -607,6 +669,8 @@ def _inspect_attempt(manifest_path: Path, role: str, expected_status: str, check
             key: manifest["project_identity"][key] for key in REQUIRED_IDENTITY_KEYS
         },
     }
+    if manifest.get("software_identity") is not None:
+        public["software_identity"] = dict(manifest["software_identity"])
 
     public["records"] = _run_component(
         checks,
@@ -630,7 +694,7 @@ def _inspect_attempt(manifest_path: Path, role: str, expected_status: str, check
         checks,
         f"{role}.doctor",
         "Doctor completed with exit code 0 and no failed checks.",
-        lambda: _validate_doctor(run_dir),
+        lambda: _validate_doctor(run_dir, manifest),
         "Doctor report is missing, malformed, inconsistent, or contains a failed check.",
     )
     public["doctor"] = doctor_result[1] if doctor_result else {"validated": False}
@@ -721,6 +785,9 @@ def _compare_attempts(clean: dict, resume: dict) -> tuple[bool, dict]:
     manifest_clean = clean["manifest"]
     manifest_resume = resume["manifest"]
     same_identity = manifest_clean["project_identity"] == manifest_resume["project_identity"]
+    same_software_identity = manifest_clean.get("software_identity") == manifest_resume.get(
+        "software_identity"
+    )
     immediate_resume = manifest_resume.get("previous_run_id") == manifest_clean["run_id"]
     same_schema = manifest_clean["run_schema_version"] == manifest_resume["run_schema_version"]
     clean_stages = clean["stages"]["map"] if clean["stages"] else {}
@@ -741,6 +808,7 @@ def _compare_attempts(clean: dict, resume: dict) -> tuple[bool, dict]:
     same_tools = clean["tools"] is not None and clean["tools"] == resume["tools"]
     result = {
         "same_project_identity": same_identity,
+        "same_software_identity": same_software_identity,
         "resume_points_to_clean_run": immediate_resume,
         "same_run_schema": same_schema,
         "same_stage_and_artifact_contract": stage_contract_match,
